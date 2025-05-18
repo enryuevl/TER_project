@@ -72,6 +72,3 @@ def detect_text(image):
         print(f"Error during text detection: {e}")
         return None, None
 
-if __name__ == "__main__":
-    # Example usage
-    

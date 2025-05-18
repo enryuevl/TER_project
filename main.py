@@ -24,14 +24,31 @@ sidebar_frame = CTkFrame(master=app, fg_color="#691612", width=220, corner_radiu
 sidebar_frame.pack_propagate(0)
 sidebar_frame.pack(fill="y", side="left")
 
-# Title instead of logo
-title_label = CTkLabel(
-    master=sidebar_frame,
-    text="ATS",
-    font=("Arial", 32, "bold"),
-    text_color="#FFFFFF"
-)
-title_label.pack(pady=(30, 20))
+# Logo
+try:
+    logo_img_data = Image.open("logo.png").convert("RGBA")
+    logo_img = CTkImage(light_image=logo_img_data, dark_image=logo_img_data, size=(120, 120))
+    logo_label = CTkLabel(master=sidebar_frame, text="", image=logo_img, bg_color="transparent")
+    logo_label.pack(pady=(30, 20))
+except:
+    pass
+
+# Navigation Icons
+icons = {
+    "Dashboard": "dashboard.png",
+    "Scan": "scan.png",
+    "Print": "print.png",
+    "Results": "results.png",
+    "Accounts": "accounts.png",
+    "Logout": "logout.png"
+}
+
+def load_icon(name):
+    try:
+        img = Image.open(icons[name])
+        return CTkImage(light_image=img, dark_image=img, size=(20, 20))
+    except:
+        return None
 
 def confirm_logout():
     if messagebox.askyesno("Logout", "Are you sure you want to logout?"):
@@ -39,6 +56,7 @@ def confirm_logout():
 
 CTkButton(
     master=sidebar_frame,
+    image=load_icon("Logout"),
     text="Logout",
     fg_color="#AC5353",
     font=("Arial", 14, "bold"),
@@ -47,6 +65,7 @@ CTkButton(
     width=160,
     height=45,
     anchor="w",
+    compound="left",
     command=confirm_logout
 ).pack(pady=30, padx=20, side="bottom")
 
@@ -162,7 +181,10 @@ def render_home_page():
         title.pack(side="left")
         
         # Icon could be added here
-        
+        icon = CTkImage(dark_image=Image.open(card["icon"]), 
+                       light_image=Image.open(card["icon"]), size=(24, 24))
+        icon_label = CTkLabel(top_section, image=icon, text="")
+        icon_label.pack(side="right")
         
         # Value with better spacing and styling
         value = CTkLabel(content_wrapper, text=card["value"], 
@@ -1199,6 +1221,7 @@ nav_actions = {
 for item, action in nav_actions.items():
     CTkButton(
         master=sidebar_frame,
+        image=load_icon(item),
         text=item,
         fg_color="#AC5353" if item == "Results" else "#AC5353",
         font=("Arial", 14, "bold"),
@@ -1207,6 +1230,7 @@ for item, action in nav_actions.items():
         width=160,
         height=45,
         anchor="w",
+        compound="left",
         command=action
     ).pack(pady=15, padx=20)
 
