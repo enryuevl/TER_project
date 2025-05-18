@@ -27,15 +27,16 @@ def fix_orientation(pil_img):
     return pil_img
 
 def process_sections(img):
-    resized = cv2.resize(img, (800, 1000))
+    resized = cv2.resize(img, (850, 1550))
 
     # Define sections dictionary; each section is processed independently.
     sections = {
-        "Section 1": resized[222:352, 530:750],
-        "Section 2": resized[365:513, 535:743],
-        "Section 3": resized[529:690, 535:743],
-        "Section 4": resized[705:870, 535:743],
+        "Section 1": resized[459:586, 574:770],
+        "Section 2": resized[606:757, 573:770],
+        "Section 3": resized[774:936, 573:770],
+        "Section 4": resized[955:1117, 573:770],
     }
+    
 
     all_section_scores = {}
     modified_images = {}  # Store the modified sections with highlighted circles

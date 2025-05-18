@@ -8,6 +8,10 @@ import pandas as pd
 import cv2
 import numpy as np
 from tksheet import Sheet
+from scanner import WIAScanner
+import threading
+import datetime
+import os
 global processed_results
 
 app = CTk()
@@ -20,31 +24,14 @@ sidebar_frame = CTkFrame(master=app, fg_color="#691612", width=220, corner_radiu
 sidebar_frame.pack_propagate(0)
 sidebar_frame.pack(fill="y", side="left")
 
-# Logo
-try:
-    logo_img_data = Image.open("logo.png").convert("RGBA")
-    logo_img = CTkImage(light_image=logo_img_data, dark_image=logo_img_data, size=(120, 120))
-    logo_label = CTkLabel(master=sidebar_frame, text="", image=logo_img, bg_color="transparent")
-    logo_label.pack(pady=(30, 20))
-except:
-    pass
-
-# Navigation Icons
-icons = {
-    "Dashboard": "dashboard.png",
-    "Scan": "scan.png",
-    "Print": "print.png",
-    "Results": "results.png",
-    "Accounts": "accounts.png",
-    "Logout": "logout.png"
-}
-
-def load_icon(name):
-    try:
-        img = Image.open(icons[name])
-        return CTkImage(light_image=img, dark_image=img, size=(20, 20))
-    except:
-        return None
+# Title instead of logo
+title_label = CTkLabel(
+    master=sidebar_frame,
+    text="ATS",
+    font=("Arial", 32, "bold"),
+    text_color="#FFFFFF"
+)
+title_label.pack(pady=(30, 20))
 
 def confirm_logout():
     if messagebox.askyesno("Logout", "Are you sure you want to logout?"):
@@ -52,7 +39,6 @@ def confirm_logout():
 
 CTkButton(
     master=sidebar_frame,
-    image=load_icon("Logout"),
     text="Logout",
     fg_color="#AC5353",
     font=("Arial", 14, "bold"),
@@ -61,7 +47,6 @@ CTkButton(
     width=160,
     height=45,
     anchor="w",
-    compound="left",
     command=confirm_logout
 ).pack(pady=30, padx=20, side="bottom")
 
@@ -177,10 +162,7 @@ def render_home_page():
         title.pack(side="left")
         
         # Icon could be added here
-        icon = CTkImage(dark_image=Image.open(card["icon"]), 
-                       light_image=Image.open(card["icon"]), size=(24, 24))
-        icon_label = CTkLabel(top_section, image=icon, text="")
-        icon_label.pack(side="right")
+        
         
         # Value with better spacing and styling
         value = CTkLabel(content_wrapper, text=card["value"], 
@@ -729,53 +711,124 @@ def render_scan_page():
     status_label = CTkLabel(status_frame, text="Scanner disconnected", font=('Montserrat', 14), text_color="#64748B")
     status_label.pack(side="left")
 
+    def process_work_folder():
+        # Get the path to MyWork/Scanned folder
+        documents_folder = os.path.join(os.path.expanduser("~"), "Documents")
+        work_folder = os.path.join(documents_folder, "MyWork")
+        scanned_folder = os.path.join(work_folder, "Scanned")
+        
+        # Check if main folder exists
+        if not os.path.exists(scanned_folder):
+            messagebox.showerror("Error", "Scanned folder not found!")
+            return None
+            
+        # Get all teacher subfolders
+        teacher_folders = [f for f in os.listdir(scanned_folder) 
+                          if os.path.isdir(os.path.join(scanned_folder, f))]
+        
+        if not teacher_folders:
+            messagebox.showwarning("Warning", "No teacher folders found!")
+            return None
+        
+        # Process each teacher's folder
+        all_results = {}  # Dictionary to store results by teacher
+        total_processed = 0
+        total_failed = 0
+        
+        for teacher in teacher_folders:
+            teacher_path = os.path.join(scanned_folder, teacher)
+            files = [f for f in os.listdir(teacher_path) 
+                    if f.endswith(('.bmp', '.jpg', '.jpeg', '.png'))]
+            
+            if not files:
+                continue
+            
+            # Process each file in teacher's folder
+            teacher_results = []
+            processed_count = 0
+            failed_count = 0
+            
+            for file in files:
+                try:
+                    file_path = os.path.join(teacher_path, file)
+                    status_label.configure(text=f"Processing {teacher} - {file}...")
+                    app.update()  # Update UI
+                    
+                    # Load and process image
+                    pil_img = Image.open(file_path)
+                    pil_img = main_code.fix_orientation(pil_img)
+                    cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+                    result = main_code.process_sections(cv_img)
+                    teacher_results.append((file, result))
+                    processed_count += 1
+                    total_processed += 1
+                    
+                except Exception as e:
+                    print(f"Error processing {file} for {teacher}: {e}")
+                    failed_count += 1
+                    total_failed += 1
+            
+            if teacher_results:
+                all_results[teacher] = teacher_results
+                
+            # Show progress for this teacher
+            if processed_count > 0:
+                status = f"Processed {processed_count} document(s) for {teacher}"
+                if failed_count > 0:
+                    status += f"\nFailed to process {failed_count} document(s)"
+                print(status)
+        
+        # Show final processing summary
+        if total_processed > 0:
+            summary = f"Successfully processed {total_processed} document(s) across {len(all_results)} teacher(s)"
+            if total_failed > 0:
+                summary += f"\nFailed to process {total_failed} document(s)"
+            messagebox.showinfo("Processing Complete", summary)
+            
+        return all_results
+
     # Action buttons
     def start_scan():
-        # Update status indicator
-        status_indicator.configure(fg_color="#10B981")
-        status_label.configure(text="Scanning in progress...")
-        
-        # Your scanner logic here
-        messagebox.showinfo("Start Scan", "Scanner activated. Please place documents.")
+        try:
+            # Initialize scanner
+            scanner = WIAScanner()
+            info = scanner.initialize()
+            
+            # Show scanner info
+            status_label.configure(text=f"Scanner detected: {info['name']}")
+            
+            # Start batch scan
+            pages_scanned = scanner.scan_batch()
+            
+            if pages_scanned > 0:
+                status_label.configure(text=f"Batch scan completed. {pages_scanned} page(s) scanned.")
+                messagebox.showinfo("Scanning Complete", f"Successfully scanned {pages_scanned} page(s)")
+            else:
+                status_label.configure(text="No documents found in ADF.")
+                messagebox.showwarning("No Documents", "No documents found in ADF. Checking for existing files...")
+            
+            # Process scanned documents
+            results = process_work_folder()
+            if results:
+                global processed_results
+                processed_results = results
+                status_label.configure(text="Processing complete! Go to Results page to view output.")
+            else:
+                status_label.configure(text="No documents found to process.")
+                
+        except Exception as e:
+            status_label.configure(text="Scanner error occurred")
+            messagebox.showerror("Scanner Error", str(e))
 
-    def import_image():
+    def scan_existing():
         global processed_results
-        file_path = filedialog.askopenfilename(
-            title="Select an Image",
-            filetypes=[("Image Files", "*.png;*.jpg;*.jpeg;*.bmp")]
-        )
-        if file_path:
-            try:
-                # Update status
-                status_indicator.configure(fg_color="#3B82F6")
-                status_label.configure(text="Processing image...")
-                
-                # Process the image
-                pil_img = Image.open(file_path)
-                pil_img = main_code.fix_orientation(pil_img)
-                cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-                processed_results = main_code.process_sections(cv_img)
-
-                # Update preview
-                preview_img = pil_img.resize((400, 500))
-                img = ImageTk.PhotoImage(preview_img)
-                img_label.configure(image=img)
-                img_label.image = img
-                
-                # Update status and info
-                status_indicator.configure(fg_color="#10B981")
-                status_label.configure(text="Image imported successfully")
-                scan_info_label.configure(text=f"File: {os.path.basename(file_path)}")
-                
-                # Update progress indicators
-                progress_bar.set(1.0)
-                process_button.configure(state="normal", fg_color="#691612")
-                save_button.configure(state="normal", fg_color="#BF3131")
-                
-            except Exception as e:
-                status_indicator.configure(fg_color="#EF4444")
-                status_label.configure(text="Error processing image")
-                messagebox.showerror("Error", f"Failed to process image: {e}")
+        results = process_work_folder()
+        if results:
+            global processed_results
+            processed_results = results
+            status_label.configure(text="Processing complete! Go to Results page to view output.")
+        else:
+            status_label.configure(text="No documents found to process.")
 
     def clear_scan():
         # Reset the UI
@@ -813,8 +866,8 @@ def render_scan_page():
     
     CTkButton(
         button_frame, 
-        text="Import Image", 
-        command=import_image,
+        text="Scan Existing Documents", 
+        command=scan_existing,
         fg_color="#BF3131",  # Original medium red color
         hover_color="#a82626",  # Original hover color
         text_color="#FFFFFF", 
@@ -825,7 +878,7 @@ def render_scan_page():
     
     CTkButton(
         button_frame, 
-        text="Clear", 
+        text="Clear Documents Folder", 
         command=clear_scan,
         fg_color="#AC5353",  # Original light red color
         hover_color="#964646",  # Original hover color
@@ -975,512 +1028,164 @@ def render_result_page():
     for widget in main_frame.winfo_children():
         widget.destroy()
 
+    if not processed_results:
+        CTkLabel(
+            master=main_frame,
+            text="No results available. Please scan or process documents first.",
+            font=('Montserrat', 16),
+            text_color="black"
+        ).pack(pady=20)
+        return
+
     # Main container
     content_frame = CTkFrame(master=main_frame, fg_color="#F8F9FA")
     content_frame.pack(fill="both", expand=True, padx=20, pady=20)
     
-    # Header section with title and actions
-    header_frame = CTkFrame(content_frame, fg_color="transparent")
-    header_frame.pack(fill="x", pady=(0, 15))
+    # Create notebook-style tabs for teachers
+    tabs_frame = CTkFrame(content_frame, fg_color="#FFFFFF", corner_radius=10)
+    tabs_frame.pack(fill="x", pady=(0, 10))
     
-    # Title with evaluation details
-    title_frame = CTkFrame(header_frame, fg_color="transparent")
-    title_frame.pack(side="left", anchor="w")
+    # Tab buttons container with horizontal scrolling
+    tab_buttons_container = CTkFrame(tabs_frame, fg_color="transparent")
+    tab_buttons_container.pack(fill="x", padx=10, pady=5)
     
-    CTkLabel(
-        title_frame, 
-        text="Evaluation Results", 
-        font=("Montserrat", 24, "bold"), 
-        text_color="#691612"
-    ).pack(anchor="w")
+    # Content area for sheets
+    sheet_container = CTkFrame(content_frame, fg_color="#FFFFFF", corner_radius=10)
+    sheet_container.pack(fill="both", expand=True)
     
-    # Get current date for the report
-    current_date = datetime.datetime.now().strftime("%B %d, %Y")
-    CTkLabel(
-        title_frame, 
-        text=f"Generated on {current_date}", 
-        font=("Montserrat", 14), 
-        text_color="#64748B"
-    ).pack(anchor="w")
+    # Store references to buttons
+    tab_buttons = []
     
-    # Action buttons in header
-    action_frame = CTkFrame(header_frame, fg_color="transparent")
-    action_frame.pack(side="right", anchor="e")
-    
-    def export_results():
-        if not processed_results:
-            messagebox.showwarning("No Data", "No evaluation data available to export.")
-            return
+    def show_teacher_results(teacher_name):
+        # Clear previous content
+        for widget in sheet_container.winfo_children():
+            widget.destroy()
             
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".csv",
-            filetypes=[("CSV Files", "*.csv"), ("Excel Files", "*.xlsx"), ("PDF Files", "*.pdf")]
+        # Update active tab
+        for btn in tab_buttons:
+            if btn.cget("text") == teacher_name:
+                btn.configure(fg_color="#691612", text_color="#FFFFFF")
+            else:
+                btn.configure(fg_color="transparent", text_color="#475569")
+        
+        # Get teacher's results
+        teacher_data = processed_results.get(teacher_name, [])
+        if not teacher_data:
+            CTkLabel(
+                sheet_container,
+                text=f"No results available for {teacher_name}",
+                font=('Montserrat', 14),
+                text_color="#64748B"
+            ).pack(pady=20)
+            return
+        
+        # Create headers for the sheet
+        headers = ["Section/Row"]
+        for idx, (filename, _) in enumerate(teacher_data):
+            headers.append(f"Doc {idx + 1}")
+        
+        # Initialize sheet data with headers
+        sheet_data = [headers]
+        
+        # Create a dictionary to store all unique section/row combinations
+        all_rows = {}
+        for _, results in teacher_data:
+            for section, rows in results.items():
+                for row_num in range(1, 6):  # Assuming 5 rows per section
+                    row_key = f"{section} Row {row_num}"
+                    if row_key not in all_rows:
+                        all_rows[row_key] = []
+        
+        # Fill in the scores for each document
+        for row_key in sorted(all_rows.keys()):
+            row_data = [row_key]
+            for _, results in teacher_data:
+                section = row_key.split(" Row ")[0]
+                row_num = int(row_key.split(" Row ")[1])
+                score = results.get(section, {}).get(row_num, "")
+                row_data.append(score)
+            sheet_data.append(row_data)
+        
+        # Add total row
+        total_row = ["Total"]
+        for _, results in teacher_data:
+            total = sum(sum(rows.values()) for rows in results.values())
+            total_row.append(total)
+        sheet_data.append(total_row)
+        
+        # Create the Sheet widget
+        table = Sheet(
+            sheet_container,
+            data=sheet_data[1:],  # Skip header row
+            headers=sheet_data[0],  # Use the first row as header
+            width=800,
+            height=600
         )
         
-        if file_path:
-            if file_path.endswith('.csv'):
-                # Export as CSV
-                with open(file_path, 'w', newline='') as csvfile:
-                    writer = csv.writer(csvfile)
-                    writer.writerows(sheet_data)
-                messagebox.showinfo("Export Successful", f"Results exported to {os.path.basename(file_path)}")
-            elif file_path.endswith('.xlsx'):
-                # Export as Excel
-                df = pd.DataFrame(sheet_data[1:], columns=sheet_data[0])
-                df.to_excel(file_path, index=False)
-                messagebox.showinfo("Export Successful", f"Results exported to {os.path.basename(file_path)}")
-            elif file_path.endswith('.pdf'):
-                # Export as PDF (would require a PDF library implementation)
-                messagebox.showinfo("Export Initiated", "PDF export started. File will be ready shortly.")
-    
-    def print_report():
-        if not processed_results:
-            messagebox.showwarning("No Data", "No evaluation data available to print.")
-            return
-        # Print dialog and functionality
-        messagebox.showinfo("Print", "Sending evaluation report to printer...")
-    
-    def new_evaluation():
-        # Clear current results and navigate to scan page
-        global processed_results
-        processed_results = {}
-        render_scan_page()
-    
-    CTkButton(
-        action_frame, 
-        text="New Evaluation", 
-        command=new_evaluation,
-        fg_color="#691612", 
-        hover_color="#550d0a", 
-        text_color="#FFFFFF", 
-        font=('Montserrat', 14),
-        width=150,
-        height=38,
-        corner_radius=8
-    ).pack(side="left", padx=5)
-    
-    CTkButton(
-        action_frame, 
-        text="Export Results", 
-        command=export_results,
-        fg_color="#BF3131", 
-        hover_color="#a82626", 
-        text_color="#FFFFFF", 
-        font=('Montserrat', 14),
-        width=150,
-        height=38,
-        corner_radius=8,
-        state="normal" if processed_results else "disabled"
-    ).pack(side="left", padx=5)
-    
-    CTkButton(
-        action_frame, 
-        text="Print Report", 
-        command=print_report,
-        fg_color="#AC5353", 
-        hover_color="#964646", 
-        text_color="#FFFFFF", 
-        font=('Montserrat', 14),
-        width=150,
-        height=38,
-        corner_radius=8,
-        state="normal" if processed_results else "disabled"
-    ).pack(side="left", padx=5)
-
-    # Check if we have processed results
-    has_results = bool(processed_results)
-    
-    # Main content container
-    main_content = CTkFrame(content_frame, fg_color="#FFFFFF", corner_radius=10)
-    main_content.pack(fill="both", expand=True)
-    
-    if has_results:
-        # Main content with tabs for different views
-        # Tab buttons
-        tab_buttons_frame = CTkFrame(main_content, fg_color="transparent")
-        tab_buttons_frame.pack(fill="x", padx=20, pady=(15, 0))
+        table.enable_bindings((
+            "single_select", "row_select", "column_width_resize",
+            "arrowkeys", "right_click_popup_menu", "rc_select", "copy"
+        ))
         
-        current_tab = CTkStringVar(value="Summary")
+        # Style the table
+        table.header_font(("Montserrat", 12, "bold"))
+        table.font(("Montserrat", 12, "normal"))  # Added 'normal' style as required
         
-        def switch_tab(tab_name):
-            current_tab.set(tab_name)
-            show_selected_tab()
-            
-            # Update tab button styles
-            for btn in tab_buttons:
-                if btn.cget("text") == tab_name:
-                    btn.configure(fg_color="#691612", text_color="#FFFFFF")
-                else:
-                    btn.configure(fg_color="transparent", text_color="#475569")
+        # Add export button for this teacher's data
+        export_frame = CTkFrame(sheet_container, fg_color="transparent")
+        export_frame.pack(fill="x", pady=10)
         
-        tab_buttons = []
-        for tab in ["Summary", "Detailed View", "Analytics"]:
-            btn = CTkButton(
-                tab_buttons_frame,
-                text=tab,
-                command=lambda t=tab: switch_tab(t),
-                fg_color="transparent" if tab != "Summary" else "#691612",
-                text_color="#475569" if tab != "Summary" else "#FFFFFF",
-                hover_color="#F1F5F9",
-                width=120,
-                height=35,
-                corner_radius=8
+        def export_teacher_results():
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV Files", "*.csv"), ("Excel Files", "*.xlsx")],
+                initialfile=f"{teacher_name}_results"
             )
-            btn.pack(side="left", padx=5)
-            tab_buttons.append(btn)
-        
-        # Content container for tab contents
-        tab_content_frame = CTkFrame(main_content, fg_color="transparent")
-        tab_content_frame.pack(fill="both", expand=True, padx=20, pady=15)
-
-        # Create data for the sheet
-        sheet_data = [["Category", "Question", "Score", "Comments"]]
-        total_score = 0
-        
-        # Process the data from processed_results
-        for section, rows in processed_results.items():
-            current_category = section
-            for i in range(1, 6):  # Assuming 5 rows per section
-                label = section if i == 1 else ""
-                question = f"Question {i}"
-                score = rows.get(i, "")  # Get row score or blank
-                
-                # Add score to total (if it's a valid number)
+            
+            if file_path:
                 try:
-                    score_value = int(score) if score else 0
-                    total_score += score_value
-                except ValueError:
-                    score_value = score  # If score is not a number, leave it as is
-                
-                sheet_data.append([label, question, score_value, ""])
-        
-        def show_selected_tab():
-            # Clear the current content
-            for widget in tab_content_frame.winfo_children():
-                widget.destroy()
-            
-            tab_name = current_tab.get()
-            
-            if tab_name == "Summary":
-                # Create a summary view with metrics and table
-                summary_frame = CTkFrame(tab_content_frame, fg_color="transparent")
-                summary_frame.pack(fill="both", expand=True)
-                
-                # Summary metrics at the top
-                metrics_frame = CTkFrame(summary_frame, fg_color="transparent")
-                metrics_frame.pack(fill="x", pady=(0, 15))
-                
-                # Calculate metrics
-                score_items = [row[2] for row in sheet_data[1:] if isinstance(row[2], int)]
-                total_items = len(score_items)
-                max_possible = total_items * 5  # Assuming max score of 5 per item
-                percentage = (total_score / max_possible) * 100 if max_possible > 0 else 0
-                avg_score = total_score / total_items if total_items > 0 else 0
-                
-                # Create metric cards
-                metrics = [
-                    {"label": "Total Score", "value": f"{total_score}/{max_possible}", "color": "#691612"},
-                    {"label": "Performance", "value": f"{percentage:.1f}%", "color": "#BF3131"},
-                    {"label": "Average Rating", "value": f"{avg_score:.1f}/5", "color": "#AC5353"}
-                ]
-                
-                for i, metric in enumerate(metrics):
-                    metric_card = CTkFrame(metrics_frame, fg_color="#FFFFFF", corner_radius=8)
-                    metric_card.grid(row=0, column=i, padx=10, sticky="nsew")
-                    metrics_frame.grid_columnconfigure(i, weight=1)
-                    
-                    CTkLabel(
-                        metric_card, 
-                        text=metric["label"], 
-                        font=("Montserrat", 14), 
-                        text_color="#64748B"
-                    ).pack(pady=(10, 5))
-                    
-                    CTkLabel(
-                        metric_card, 
-                        text=metric["value"], 
-                        font=("Montserrat", 24, "bold"), 
-                        text_color=metric["color"]
-                    ).pack(pady=(0, 10))
-                
-                # Table for summary data
-                table_container = CTkFrame(summary_frame, fg_color="#FFFFFF", corner_radius=8, border_width=1, border_color="#E2E8F0")
-                table_container.pack(fill="both", expand=True)
-                
-                # Calculate category summaries
-                category_data = {}
-                current_category = None
-                for row in sheet_data[1:]:  # Skip header
-                    category = row[0] if row[0] else current_category
-                    current_category = category
-                    
-                    if category not in category_data:
-                        category_data[category] = {"total": 0, "count": 0}
-                    
-                    if isinstance(row[2], int):
-                        category_data[category]["total"] += row[2]
-                        category_data[category]["count"] += 1
-                
-                # Create summary headers
-                summary_headers = ["Category", "Average Score", "Rating"]
-                summary_rows = []
-                
-                for category, data in category_data.items():
-                    avg = data["total"] / data["count"] if data["count"] > 0 else 0
-                    
-                    # Convert average to rating text
-                    if avg >= 4.5:
-                        rating = "Excellent"
-                    elif avg >= 3.5:
-                        rating = "Good"
-                    elif avg >= 2.5:
-                        rating = "Average"
-                    elif avg >= 1.5:
-                        rating = "Below Average"
+                    if file_path.endswith('.csv'):
+                        pd.DataFrame(sheet_data[1:], columns=sheet_data[0]).to_csv(file_path, index=False)
                     else:
-                        rating = "Poor"
-                    
-                    summary_rows.append([category, f"{avg:.1f}", rating])
-                
-                # Create summary table
-                summary_table = Sheet(
-                    table_container,
-                    data=summary_rows,
-                    headers=summary_headers,
-                    header_font=("Montserrat", 12, "bold"),
-                    font=("Montserrat", 12),
-                    show_x_scrollbar=False,
-                    show_y_scrollbar=True,
-                    height=250
-                )
-                
-                summary_table.enable_bindings((
-                    "single_select", "row_select", "copy"
-                ))
-                
-                # Style the table
-                summary_table.heading_font(("Montserrat", 12, "bold"))
-                summary_table.font(("Montserrat", 12))
-                summary_table.column_width(0, 150)
-                summary_table.column_width(1, 120)
-                summary_table.column_width(2, 120)
-                
-                # Color coding for ratings
-                for i, row in enumerate(summary_rows):
-                    rating = row[2]
-                    if rating == "Excellent":
-                        summary_table.highlight_cells(row=i, column=2, bg="#10B981", fg="white")
-                    elif rating == "Good":
-                        summary_table.highlight_cells(row=i, column=2, bg="#3B82F6", fg="white")
-                    elif rating == "Average":
-                        summary_table.highlight_cells(row=i, column=2, bg="#F59E0B", fg="white")
-                    elif rating == "Below Average":
-                        summary_table.highlight_cells(row=i, column=2, bg="#F97316", fg="white")
-                    else:
-                        summary_table.highlight_cells(row=i, column=2, bg="#EF4444", fg="white")
-                
-                summary_table.pack(fill="both", expand=True, padx=1, pady=1)
-                
-            elif tab_name == "Detailed View":
-                # Create the detailed table with all data
-                detail_frame = CTkFrame(tab_content_frame, fg_color="transparent")
-                detail_frame.pack(fill="both", expand=True)
-                
-                # Add search/filter options
-                filter_frame = CTkFrame(detail_frame, fg_color="transparent")
-                filter_frame.pack(fill="x", pady=(0, 10))
-                
-                CTkLabel(
-                    filter_frame, 
-                    text="Filter by:", 
-                    font=("Montserrat", 14), 
-                    text_color="#64748B"
-                ).pack(side="left", padx=(0, 10))
-                
-                # Dropdown for category filter
-                categories = list(set(row[0] for row in sheet_data[1:] if row[0]))
-                category_var = CTkStringVar(value="All Categories")
-                
-                CTkComboBox(
-                    filter_frame,
-                    values=["All Categories"] + categories,
-                    variable=category_var,
-                    width=200,
-                    height=30,
-                    dropdown_font=("Montserrat", 12),
-                    font=("Montserrat", 12)
-                ).pack(side="left", padx=5)
-                
-                # Create detailed table
-                table_container = CTkFrame(detail_frame, fg_color="#FFFFFF", corner_radius=8, border_width=1, border_color="#E2E8F0")
-                table_container.pack(fill="both", expand=True)
-                
-                detail_table = Sheet(
-                    table_container,
-                    data=sheet_data[1:],  # Skip header row
-                    headers=sheet_data[0],  # Use the first row as header
-                    header_font=("Montserrat", 12, "bold"),
-                    font=("Montserrat", 12),
-                    show_x_scrollbar=False,
-                    show_y_scrollbar=True,
-                    height=350
-                )
-                
-                detail_table.enable_bindings((
-                    "single_select", "row_select", "column_width_resize",
-                    "arrowkeys", "right_click_popup_menu", "rc_select", "copy"
-                ))
-                
-                # Style the table
-                detail_table.heading_font(("Montserrat", 12, "bold"))
-                detail_table.font(("Montserrat", 12))
-                detail_table.column_width(0, 150)  # Category
-                detail_table.column_width(1, 100)  # Question
-                detail_table.column_width(2, 80)   # Score
-                detail_table.column_width(3, 250)  # Comments
-                
-                # Color code scores
-                for i, row in enumerate(sheet_data[1:]):
-                    if isinstance(row[2], int):
-                        if row[2] >= 4:
-                            detail_table.highlight_cells(row=i, column=2, bg="#10B981", fg="white")
-                        elif row[2] == 3:
-                            detail_table.highlight_cells(row=i, column=2, bg="#F59E0B", fg="white")
-                        else:
-                            detail_table.highlight_cells(row=i, column=2, bg="#EF4444", fg="white")
-                
-                detail_table.pack(fill="both", expand=True, padx=1, pady=1)
-                
-            elif tab_name == "Analytics":
-                # Create analytics view with charts
-                analytics_frame = CTkFrame(tab_content_frame, fg_color="transparent")
-                analytics_frame.pack(fill="both", expand=True)
-                
-                # Split view for charts
-                top_charts = CTkFrame(analytics_frame, fg_color="transparent")
-                top_charts.pack(fill="x", pady=(0, 15))
-                top_charts.grid_columnconfigure(0, weight=1)
-                top_charts.grid_columnconfigure(1, weight=1)
-                
-                # Chart 1: Category Performance
-                chart1_frame = CTkFrame(top_charts, fg_color="#FFFFFF", corner_radius=8)
-                chart1_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
-                
-                CTkLabel(
-                    chart1_frame, 
-                    text="Category Performance", 
-                    font=("Montserrat", 16, "bold"), 
-                    text_color="#334155"
-                ).pack(pady=(15, 10))
-                
-                chart_placeholder1 = CTkFrame(chart1_frame, fg_color="#F1F5F9", corner_radius=5, height=200)
-                chart_placeholder1.pack(fill="x", padx=15, pady=(0, 15))
-                
-                CTkLabel(
-                    chart_placeholder1, 
-                    text="Bar Chart: Category Averages", 
-                    font=("Montserrat", 14), 
-                    text_color="#64748B"
-                ).pack(expand=True)
-                
-                # Chart 2: Score Distribution
-                chart2_frame = CTkFrame(top_charts, fg_color="#FFFFFF", corner_radius=8)
-                chart2_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
-                
-                CTkLabel(
-                    chart2_frame, 
-                    text="Score Distribution", 
-                    font=("Montserrat", 16, "bold"), 
-                    text_color="#334155"
-                ).pack(pady=(15, 10))
-                
-                chart_placeholder2 = CTkFrame(chart2_frame, fg_color="#F1F5F9", corner_radius=5, height=200)
-                chart_placeholder2.pack(fill="x", padx=15, pady=(0, 15))
-                
-                CTkLabel(
-                    chart_placeholder2, 
-                    text="Pie Chart: Score Distribution", 
-                    font=("Montserrat", 14), 
-                    text_color="#64748B"
-                ).pack(expand=True)
-                
-                # Bottom chart: Performance Trend
-                bottom_chart = CTkFrame(analytics_frame, fg_color="#FFFFFF", corner_radius=8)
-                bottom_chart.pack(fill="both", expand=True)
-                
-                CTkLabel(
-                    bottom_chart, 
-                    text="Question Performance", 
-                    font=("Montserrat", 16, "bold"), 
-                    text_color="#334155"
-                ).pack(pady=(15, 10))
-                
-                chart_placeholder3 = CTkFrame(bottom_chart, fg_color="#F1F5F9", corner_radius=5)
-                chart_placeholder3.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-                
-                CTkLabel(
-                    chart_placeholder3, 
-                    text="Line Chart: Question-by-Question Performance", 
-                    font=("Montserrat", 14), 
-                    text_color="#64748B"
-                ).pack(expand=True)
+                        pd.DataFrame(sheet_data[1:], columns=sheet_data[0]).to_excel(file_path, index=False)
+                    messagebox.showinfo("Export Successful", f"Results exported to {os.path.basename(file_path)}")
+                except Exception as e:
+                    messagebox.showerror("Export Error", f"Failed to export results: {str(e)}")
         
-        # Show default tab
-        show_selected_tab()
-        
-    else:
-        # No results view
-        no_results_frame = CTkFrame(main_content, fg_color="transparent")
-        no_results_frame.pack(fill="both", expand=True, padx=30, pady=30)
-        
-        # Center the content vertically
-        no_results_frame.grid_rowconfigure(0, weight=1)
-        no_results_frame.grid_rowconfigure(2, weight=1)
-        no_results_frame.grid_columnconfigure(0, weight=1)
-        
-        # No results message and icon
-        message_frame = CTkFrame(no_results_frame, fg_color="transparent")
-        message_frame.grid(row=1, column=0)
-        
-        # Icon placeholder (in a real app, replace with an actual icon)
-        icon_frame = CTkFrame(message_frame, width=100, height=100, fg_color="#F1F5F9", corner_radius=50)
-        icon_frame.pack(pady=20)
-        
-        CTkLabel(
-            icon_frame,
-            text="📄",  # Document emoji as placeholder
-            font=("Arial", 40),
-            text_color="#64748B"
-        ).place(relx=0.5, rely=0.5, anchor="center")
-        
-        CTkLabel(
-            message_frame,
-            text="No Evaluation Results",
-            font=("Montserrat", 24, "bold"),
-            text_color="#334155"
-        ).pack()
-        
-        CTkLabel(
-            message_frame,
-            text="There are no processed evaluation results to display.\nPlease scan or import an evaluation form to get started.",
-            font=("Montserrat", 14),
-            text_color="#64748B",
-            justify="center"
-        ).pack(pady=10)
-        
-        # Action button
         CTkButton(
-            message_frame,
-            text="Scan New Evaluation",
-            command=render_scan_page,
+            export_frame,
+            text="Export Results",
+            command=export_teacher_results,
             fg_color="#691612",
             hover_color="#550d0a",
             text_color="#FFFFFF",
-            font=('Montserrat', 16),
-            width=200,
-            height=45,
+            font=('Montserrat', 14),
+            width=150,
+            height=35
+        ).pack(side="right", padx=10)
+        
+        table.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    
+    # Create tab buttons for each teacher
+    for i, teacher in enumerate(processed_results.keys()):
+        btn = CTkButton(
+            tab_buttons_container,
+            text=teacher,
+            command=lambda name=teacher: show_teacher_results(name),  # Fixed lambda
+            fg_color="transparent" if i > 0 else "#691612",
+            text_color="#475569" if i > 0 else "#FFFFFF",
+            hover_color="#F1F5F9",
+            width=150,
+            height=35,
             corner_radius=8
-        ).pack(pady=20)
+        )
+        btn.pack(side="left", padx=5)
+        tab_buttons.append(btn)
+    
+    # Show first teacher's results by default
+    if processed_results:
+        first_teacher = next(iter(processed_results.keys()))
+        show_teacher_results(first_teacher)
 
 # Navigation sidebar buttons
 nav_actions = {
@@ -1494,16 +1199,14 @@ nav_actions = {
 for item, action in nav_actions.items():
     CTkButton(
         master=sidebar_frame,
-        image=load_icon(item),
         text=item,
-        fg_color="#AC5353" if item == "Results" else "#AC5353",  # Highlight active tab
+        fg_color="#AC5353" if item == "Results" else "#AC5353",
         font=("Arial", 14, "bold"),
         text_color="#FFFFFF",
         hover_color="#BF3131",
         width=160,
         height=45,
         anchor="w",
-        compound="left",
         command=action
     ).pack(pady=15, padx=20)
 
