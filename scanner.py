@@ -8,7 +8,6 @@ import re
 import time
 import cv2
 import shutil
-from name_detection import preprocess_image_for_ocr, detect_text
 
 class WIAScanner:
     # WIA Constants
@@ -84,89 +83,18 @@ class WIAScanner:
         except:
             return True
     
-    def _detect_name_from_image(self, image_path):
-        """Detect name from the scanned image"""
-        try:
-            # Load and process the image
-            image = cv2.imread(image_path)
-            if image is None:
-                print(f"Could not load image: {image_path}")
-                return None
-            
-            # Use the detect_text function directly
-            text, words = detect_text(image)
-            
-            # Clean up the detected text
-            if text:
-                # Remove special characters and extra whitespace
-                cleaned_text = re.sub(r'[^a-zA-Z\s]', '', text.strip())
-                if cleaned_text:
-                    print(f"✅ Name detected: {cleaned_text}")
-                    if words:  # Print confidence scores if available
-                        print("Confidence scores:")
-                        for word, conf in words:
-                            print(f"  {word}: {conf}%")
-                    return cleaned_text
-            
-            print("❌ No valid name detected in the image")
-            return None
-            
-        except Exception as e:
-            print(f"Error detecting name: {e}")
-            return None
-    
-    def _organize_file_by_name(self, source_path, detected_name):
-        """Organize the scanned file into a folder based on the detected name"""
-        if not detected_name:
-            return False
-            
-        try:
-            # Create a valid folder name from the detected name
-            folder_name = re.sub(r'[^a-zA-Z\s]', '', detected_name.strip())
-            folder_name = folder_name.replace(' ', '_').lower()
-            
-            if not folder_name:
-                print("❌ Could not create valid folder name from detected name")
-                return False
-                
-            # Create the name-specific folder
-            name_folder = os.path.join(self.output_dir, folder_name)
-            os.makedirs(name_folder, exist_ok=True)
-            
-            # Move the file to the name-specific folder
-            filename = os.path.basename(source_path)
-            target_path = os.path.join(name_folder, filename)
-            shutil.move(source_path, target_path)
-            
-            print(f"✅ Organized file into folder: {folder_name}")
-            return True
-            
-        except Exception as e:
-            print(f"❌ Error organizing file: {e}")
-            return False
-            
     def scan_page(self, output_filename):
-        """Scan a single page and organize it based on detected name"""
+        """Scan a single page and save it in the main output folder (name detection removed)"""
         try:
             conn = self.connect()
             scan_item = conn.Items[1]
             image = scan_item.Transfer()
             output_path = os.path.join(self.output_dir, output_filename)
             image.SaveFile(output_path)
-            
             print(f"\n📝 Processing scanned document: {output_filename}")
-            
-            # Detect name and organize file
-            print("Detecting name from scanned document...")
-            detected_name = self._detect_name_from_image(output_path)
-            
-            if detected_name:
-                self._organize_file_by_name(output_path, detected_name)
-            else:
-                print("⚠️ Document will remain in main scanned folder")
-                
+            # Name detection and organization removed
+            print("Document saved in main scanned folder.")
             return True
-            
         except Exception as e:
             if not self.has_more_pages():
                 return False
