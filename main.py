@@ -8,10 +8,14 @@ import pandas as pd
 import cv2
 import numpy as np
 from tksheet import Sheet
+import db
 from scanner import WIAScanner
 import threading
 import datetime
 import os
+
+# Initialize database (creates Documents/MyWork/ter_db.sqlite on first run)
+db.initialize_database()
 
 # Initialize global variables
 processed_results = {}
@@ -310,6 +314,7 @@ def render_home_page():
     version_text = CTkLabel(footer, text="v1.2.0", font=("Poppins", 12), text_color="#ADB5BD")
     version_text.pack(side="right", padx=15)
 
+#this supposed to be accounts page
 def render_user_page():
     for widget in main_frame.winfo_children():
         widget.destroy()
@@ -317,328 +322,1588 @@ def render_user_page():
     container = CTkFrame(master=main_frame, fg_color="transparent")
     container.pack(fill="both", expand=True, padx=20, pady=20)
     
-    title_frame = CTkFrame(master=container, fg_color="transparent")
-    title_frame.pack(fill="x", pady=(0, 15))
-    
-    CTkLabel(
-        title_frame, 
-        text="User Management", 
-        font=("Arial", 18, "bold"), 
+    # Title
+    title_label = CTkLabel(
+        container, 
+        text="Database Management", 
+        font=("Arial", 24, "bold"), 
         text_color="#691612"
-    ).pack(anchor="w")
+    )
+    title_label.pack(pady=(0, 20))
     
-    top_section = CTkFrame(master=container, fg_color="transparent")
-    top_section.pack(fill="x", pady=(0, 15))
+    # Create tabs for different entity types
+    tab_frame = CTkFrame(container, fg_color="transparent")
+    tab_frame.pack(fill="x", pady=(0, 20))
     
-    form_frame = CTkFrame(master=top_section, fg_color="#FFFFFF", corner_radius=10)
-    form_frame.pack(side="left", fill="both", padx=(0, 10))
+    # Tab buttons
+    tab_buttons = {}
+    tab_content = {}
     
-    form_title = CTkFrame(master=form_frame, fg_color="#691612", corner_radius=5)
-    form_title.pack(fill="x", padx=10, pady=10)
-    CTkLabel(
-        form_title, 
-        text="User Information", 
+    entities = ["Students", "Faculty", "Departments", "Subjects", "Blocks", "Teaching Assignments", "Enrollments"]
+    
+    for i, entity in enumerate(entities):
+        btn = CTkButton(
+            tab_frame,
+            text=entity,
+            command=lambda e=entity: show_tab(e),
+            fg_color="#AC5353" if i == 0 else "#F1F3F5",
+            text_color="#FFFFFF" if i == 0 else "#333333",
+            hover_color="#BF3131" if i == 0 else "#E9ECEF",
+            width=120,
+            height=35,
+            corner_radius=8
+        )
+        btn.pack(side="left", padx=5)
+        tab_buttons[entity] = btn
+    
+    # Content area
+    content_frame = CTkFrame(container, fg_color="#FFFFFF", corner_radius=10)
+    content_frame.pack(fill="both", expand=True)
+    
+    # Success message indicator (non-blocking)
+    success_frame = CTkFrame(container, fg_color="#10B981", corner_radius=8, height=0)
+    success_frame.pack(fill="x", pady=(0, 10))
+    success_frame.pack_propagate(False)
+    
+    success_label = CTkLabel(
+        success_frame, 
+        text="", 
         font=("Arial", 14, "bold"), 
         text_color="#FFFFFF"
-    ).pack(anchor="w", padx=10, pady=5)
+    )
+    success_label.pack(pady=10)
     
-    fields_frame = CTkFrame(master=form_frame, fg_color="transparent")
-    fields_frame.pack(fill="both", expand=True, padx=15, pady=15)
+    def show_success_message(message):
+        success_label.configure(text=message)
+        success_frame.configure(height=50)
+        # Auto-hide after 3 seconds
+        container.after(3000, lambda: success_frame.configure(height=0))
     
-    field_pairs = [
-        ("Full Name:", "name_entry"),
-        ("Username:", "username_entry"),
-        ("Password:", "password_entry"),
-        ("Role:", "role_option")
-    ]
+    def show_tab(entity_name):
+        # Update button colors
+        for name, btn in tab_buttons.items():
+            if name == entity_name:
+                btn.configure(fg_color="#AC5353", text_color="#FFFFFF")
+            else:
+                btn.configure(fg_color="#F1F3F5", text_color="#333333")
+        
+        # Clear content and show new form
+        for widget in content_frame.winfo_children():
+            widget.destroy()
+        
+        if entity_name == "Students":
+            show_student_form()
+        elif entity_name == "Faculty":
+            show_faculty_form()
+        elif entity_name == "Departments":
+            show_department_form()
+        elif entity_name == "Subjects":
+            show_subject_form()
+        elif entity_name == "Blocks":
+            show_block_form()
+        elif entity_name == "Teaching Assignments":
+            show_teaching_assignment_form()
+        elif entity_name == "Enrollments":
+            show_enrollment_form()
     
-    for i, (label_text, entry_name) in enumerate(field_pairs):
-        field_row = CTkFrame(master=fields_frame, fg_color="transparent")
-        field_row.pack(fill="x", pady=8)
+    def show_student_form():
+        form_frame = CTkFrame(content_frame, fg_color="transparent")
+        form_frame.pack(fill="both", expand=True, padx=30, pady=30)
+        
+        # Title
+    CTkLabel(
+            form_frame, 
+            text="Add New Student", 
+            font=("Arial", 20, "bold"), 
+        text_color="#691612"
+        ).pack(pady=(0, 20))
+        
+        # Form fields
+        fields_frame = CTkFrame(form_frame, fg_color="transparent")
+        fields_frame.pack(fill="x")
+        
+        # Student name
+        name_frame = CTkFrame(fields_frame, fg_color="transparent")
+        name_frame.pack(fill="x", pady=10)
+        CTkLabel(name_frame, text="Student Name:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        name_entry = CTkEntry(name_frame, fg_color="#F8F9FA", border_color="#E9ECEF", height=35, font=("Arial", 14))
+        name_entry.pack(fill="x", pady=(5, 0))
+        
+        # Block selection
+        block_frame = CTkFrame(fields_frame, fg_color="transparent")
+        block_frame.pack(fill="x", pady=10)
+        CTkLabel(block_frame, text="Block:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        
+        # Get blocks from database
+        blocks = []
+        try:
+            import db
+            with db.connect() as conn:
+                cursor = conn.execute("SELECT id, year_level, section FROM blocks")
+                blocks = cursor.fetchall()
+        except:
+            pass
+        
+        if blocks:
+            block_options = [f"Year {b[1]} - Section {b[2]}" for b in blocks]
+            block_var = StringVar()
+            block_dropdown = CTkOptionMenu(
+                block_frame,
+                variable=block_var,
+                values=block_options,
+                fg_color="#F8F9FA",
+                button_color="#E9ECEF",
+                button_hover_color="#DDE2E6",
+                text_color="#333333",
+                height=35,
+                font=("Arial", 14)
+            )
+            block_dropdown.pack(fill="x", pady=(5, 0))
+            if block_options:
+                block_dropdown.set(block_options[0])
+        else:
+            CTkLabel(block_frame, text="No blocks available. Create blocks first.", font=("Arial", 12), text_color="#6C757D").pack(pady=(5, 0))
+        
+        # Submit button
+        submit_btn = CTkButton(
+            form_frame,
+            text="Add Student",
+            command=lambda: add_student(name_entry.get(), block_var.get() if 'block_var' in locals() else None),
+            fg_color="#691612",
+            hover_color="#AC5353",
+            text_color="#FFFFFF",
+            font=("Arial", 14, "bold"),
+            height=40,
+            corner_radius=8
+        )
+        submit_btn.pack(pady=30)
+    
+    def show_faculty_form():
+        form_frame = CTkFrame(content_frame, fg_color="transparent")
+        form_frame.pack(fill="both", expand=True, padx=30, pady=30)
+        
+    CTkLabel(
+            form_frame, 
+            text="Add New Faculty Member", 
+            font=("Arial", 20, "bold"), 
+            text_color="#691612"
+        ).pack(pady=(0, 20))
+        
+        fields_frame = CTkFrame(form_frame, fg_color="transparent")
+        fields_frame.pack(fill="x")
+        
+        # Faculty name
+        name_frame = CTkFrame(fields_frame, fg_color="transparent")
+        name_frame.pack(fill="x", pady=10)
+        CTkLabel(name_frame, text="Faculty Name:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        name_entry = CTkEntry(name_frame, fg_color="#F8F9FA", border_color="#E9ECEF", height=35, font=("Arial", 14))
+        name_entry.pack(fill="x", pady=(5, 0))
+        
+        # Department selection
+        dept_frame = CTkFrame(fields_frame, fg_color="transparent")
+        dept_frame.pack(fill="x", pady=10)
+        CTkLabel(dept_frame, text="Department:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        
+        departments = []
+        try:
+            import db
+            with db.connect() as conn:
+                cursor = conn.execute("SELECT id, name FROM departments")
+                departments = cursor.fetchall()
+        except:
+            pass
+        
+        if departments:
+            dept_options = [d[1] for d in departments]
+            dept_var = StringVar()
+            dept_dropdown = CTkOptionMenu(
+                dept_frame,
+                variable=dept_var,
+                values=dept_options,
+                fg_color="#F8F9FA",
+                button_color="#E9ECEF",
+                button_hover_color="#DDE2E6",
+                text_color="#333333",
+                height=35,
+                font=("Arial", 14)
+            )
+            dept_dropdown.pack(fill="x", pady=(5, 0))
+            dept_dropdown.set(dept_options[0])
+        else:
+            CTkLabel(dept_frame, text="No departments available. Create departments first.", font=("Arial", 12), text_color="#6C757D").pack(pady=(5, 0))
+        
+        # Rank selection
+        rank_frame = CTkFrame(fields_frame, fg_color="transparent")
+        rank_frame.pack(fill="x", pady=10)
+        CTkLabel(rank_frame, text="Rank:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        
+        rank_var = StringVar()
+        rank_dropdown = CTkOptionMenu(
+            rank_frame,
+            variable=rank_var,
+            values=["Instructor", "Assistant Professor", "Associate Professor", "Professor"],
+            fg_color="#F8F9FA",
+            button_color="#E9ECEF",
+            button_hover_color="#DDE2E6",
+            text_color="#333333",
+            height=35,
+            font=("Arial", 14)
+        )
+        rank_dropdown.pack(fill="x", pady=(5, 0))
+        rank_dropdown.set("Instructor")
+        
+        # Submit button
+        submit_btn = CTkButton(
+            form_frame,
+            text="Add Faculty Member",
+            command=lambda: add_faculty(name_entry.get(), dept_var.get() if 'dept_var' in locals() else None, rank_var.get()),
+            fg_color="#691612",
+            hover_color="#AC5353",
+            text_color="#FFFFFF",
+        font=("Arial", 14, "bold"), 
+            height=40,
+            corner_radius=8
+        )
+        submit_btn.pack(pady=30)
+    
+    def show_department_form():
+        form_frame = CTkFrame(content_frame, fg_color="transparent")
+        form_frame.pack(fill="both", expand=True, padx=30, pady=30)
         
         CTkLabel(
-            field_row, 
-            text=label_text, 
-            font=("Arial", 12), 
-            text_color="#333333",
-            width=80
-        ).pack(side="left")
+            form_frame, 
+            text="Add New Department", 
+            font=("Arial", 20, "bold"), 
+            text_color="#691612"
+        ).pack(pady=(0, 20))
         
-        if entry_name == "role_option":
-            role_option = CTkOptionMenu(
-                field_row,
-                values=["Student", "Faculty", "Admin"],
-                fg_color="#BF3131",
-                button_color="#691612",
-                button_hover_color="#AC5353",
-                dropdown_fg_color="#FFFFFF",
-                dropdown_text_color="#333333",
-                dropdown_hover_color="#F0F0F0",
-                text_color="#FFFFFF",
-                width=200
-            )
-            role_option.pack(side="left", fill="x", expand=True)
-            role_option.set("Student")
-        else:
-            entry = CTkEntry(
-                field_row, 
-                fg_color="#F8F8F8", 
-                border_color="#E0E0E0",
-                corner_radius=5,
-                height=32,
-                placeholder_text=label_text.replace(":", ""),
-                width=200
-            )
-            entry.pack(side="left", fill="x", expand=True)
-            
-            if entry_name == "password_entry":
-                entry.configure(show="•")
-            
-            locals()[entry_name] = entry
-    
-    btn_frame = CTkFrame(master=top_section, fg_color="#FFFFFF", corner_radius=10)
-    btn_frame.pack(side="right", fill="both", expand=True)
-    
-    buttons_title = CTkFrame(master=btn_frame, fg_color="#691612", corner_radius=5)
-    buttons_title.pack(fill="x", padx=10, pady=10)
-    CTkLabel(
-        buttons_title, 
-        text="Actions", 
-        font=("Arial", 14, "bold"), 
-        text_color="#FFFFFF"
-    ).pack(anchor="w", padx=10, pady=5)
-    
-    buttons_container = CTkFrame(master=btn_frame, fg_color="transparent")
-    buttons_container.pack(fill="both", expand=True, padx=15, pady=15)
-    
-    button_configs = [
-        {
-            "text": "Add User",
-            "fg_color": "#691612",
-            "hover_color": "#AC5353",
-            "command": "add_user"
-        },
-        {
-            "text": "Update User",
-            "fg_color": "#BF3131",
-            "hover_color": "#AC5353", 
-            "command": "update_user"
-        },
-        {
-            "text": "Delete User",
-            "fg_color": "#AC5353",
-            "hover_color": "#BF3131",
-            "command": "delete_user"
-        },
-        {
-            "text": "Clear Form",
-            "fg_color": "#888888",
-            "hover_color": "#666666",
-            "command": "clear_form"
-        }
-    ]
-    
-    btn_grid = CTkFrame(master=buttons_container, fg_color="transparent")
-    btn_grid.pack(fill="both", expand=True, pady=10)
-    
-    btn_grid.columnconfigure(0, weight=1)
-    btn_grid.columnconfigure(1, weight=1)
-    btn_grid.rowconfigure(0, weight=1)
-    btn_grid.rowconfigure(1, weight=1)
-    
-    buttons = []
-    for i, btn_config in enumerate(button_configs):
-        row = i // 2
-        col = i % 2
+        fields_frame = CTkFrame(form_frame, fg_color="transparent")
+        fields_frame.pack(fill="x")
         
-        btn_pad = CTkFrame(master=btn_grid, fg_color="transparent")
-        btn_pad.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+        # Department name
+        name_frame = CTkFrame(fields_frame, fg_color="transparent")
+        name_frame.pack(fill="x", pady=10)
+        CTkLabel(name_frame, text="Department Name:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        name_entry = CTkEntry(name_frame, fg_color="#F8F9FA", border_color="#E9ECEF", height=35, font=("Arial", 14))
+        name_entry.pack(fill="x", pady=(5, 0))
         
-        btn = CTkButton(
-            btn_pad,
-            text=btn_config["text"],
-            font=("Arial", 11, "bold"),
-            fg_color=btn_config["fg_color"],
-            hover_color=btn_config["hover_color"],
+        # Submit button
+        submit_btn = CTkButton(
+            form_frame,
+            text="Add Department",
+            command=lambda: add_department(name_entry.get()),
+            fg_color="#691612",
+            hover_color="#AC5353",
             text_color="#FFFFFF",
-            height=30,
-            width=120,
-            corner_radius=5
+            font=("Arial", 14, "bold"),
+            height=40,
+            corner_radius=8
         )
-        btn.pack(expand=True)
-        buttons.append(btn)
+        submit_btn.pack(pady=30)
     
-    table_frame = CTkFrame(master=container, fg_color="#FFFFFF", corner_radius=10)
-    table_frame.pack(fill="both", expand=True, pady=(0, 10))
+    def show_subject_form():
+        form_frame = CTkFrame(content_frame, fg_color="transparent")
+        form_frame.pack(fill="both", expand=True, padx=30, pady=30)
+        
+        CTkLabel(
+            form_frame, 
+            text="Add New Subject", 
+            font=("Arial", 20, "bold"), 
+            text_color="#691612"
+        ).pack(pady=(0, 20))
+        
+        fields_frame = CTkFrame(form_frame, fg_color="transparent")
+        fields_frame.pack(fill="x")
+        
+        # Subject code
+        code_frame = CTkFrame(fields_frame, fg_color="transparent")
+        code_frame.pack(fill="x", pady=10)
+        CTkLabel(code_frame, text="Subject Code:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        code_entry = CTkEntry(code_frame, fg_color="#F8F9FA", border_color="#E9ECEF", height=35, font=("Arial", 14))
+        code_entry.pack(fill="x", pady=(5, 0))
+        
+        # Subject name
+        name_frame = CTkFrame(fields_frame, fg_color="transparent")
+        name_frame.pack(fill="x", pady=10)
+        CTkLabel(name_frame, text="Subject Name:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        name_entry = CTkEntry(name_frame, fg_color="#F8F9FA", border_color="#E9ECEF", height=35, font=("Arial", 14))
+        name_entry.pack(fill="x", pady=(5, 0))
+        
+        # Units
+        units_frame = CTkFrame(fields_frame, fg_color="transparent")
+        units_frame.pack(fill="x", pady=10)
+        CTkLabel(units_frame, text="Units:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        units_entry = CTkEntry(units_frame, fg_color="#F8F9FA", border_color="#E9ECEF", height=35, font=("Arial", 14))
+        units_entry.pack(fill="x", pady=(5, 0))
+        
+        # Submit button
+        submit_btn = CTkButton(
+            form_frame,
+            text="Add Subject",
+            command=lambda: add_subject(code_entry.get(), name_entry.get(), units_entry.get()),
+            fg_color="#691612",
+            hover_color="#AC5353",
+            text_color="#FFFFFF",
+            font=("Arial", 14, "bold"),
+            height=40,
+            corner_radius=8
+        )
+        submit_btn.pack(pady=30)
     
-    table_title = CTkFrame(master=table_frame, fg_color="#691612", corner_radius=5)
-    table_title.pack(fill="x", padx=10, pady=10)
+    def show_block_form():
+        form_frame = CTkFrame(content_frame, fg_color="transparent")
+        form_frame.pack(fill="both", expand=True, padx=30, pady=30)
+        
+        CTkLabel(
+            form_frame, 
+            text="Add New Block", 
+            font=("Arial", 20, "bold"), 
+            text_color="#691612"
+        ).pack(pady=(0, 20))
+        
+        fields_frame = CTkFrame(form_frame, fg_color="transparent")
+        fields_frame.pack(fill="x")
+        
+        # Year level
+        year_frame = CTkFrame(fields_frame, fg_color="transparent")
+        year_frame.pack(fill="x", pady=10)
+        CTkLabel(year_frame, text="Year Level:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        year_entry = CTkEntry(year_frame, fg_color="#F8F9FA", border_color="#E9ECEF", height=35, font=("Arial", 14))
+        year_entry.pack(fill="x", pady=(5, 0))
+        
+        # Section
+        section_frame = CTkFrame(fields_frame, fg_color="transparent")
+        section_frame.pack(fill="x", pady=10)
+        CTkLabel(section_frame, text="Section:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        
+        section_var = StringVar()
+        section_dropdown = CTkOptionMenu(
+            section_frame,
+            variable=section_var,
+            values=["A", "B", "C"],
+            fg_color="#F8F9FA",
+            button_color="#E9ECEF",
+            button_hover_color="#DDE2E6",
+            text_color="#333333",
+            height=35,
+            font=("Arial", 14)
+        )
+        section_dropdown.pack(fill="x", pady=(5, 0))
+        section_dropdown.set("A")
+        
+        # Submit button
+        submit_btn = CTkButton(
+            form_frame,
+            text="Add Block",
+            command=lambda: add_block(year_entry.get(), section_var.get()),
+            fg_color="#691612",
+            hover_color="#AC5353",
+                text_color="#FFFFFF",
+            font=("Arial", 14, "bold"),
+            height=40,
+            corner_radius=8
+        )
+        submit_btn.pack(pady=30)
     
-    title_contents = CTkFrame(master=table_title, fg_color="transparent")
-    title_contents.pack(fill="x", padx=10, pady=5)
+    # Database functions
+    def add_student(name, block_info):
+        if not name:
+            messagebox.showerror("Error", "Please enter student name")
+            return
+        
+        try:
+            import db
+            with db.connect() as conn:
+                if block_info:
+                    # Extract block ID from the display text
+                    block_parts = block_info.split(" - Section ")
+                    year = int(block_parts[0].replace("Year ", ""))
+                    section = block_parts[1]
+                    
+                    cursor = conn.execute("SELECT id FROM blocks WHERE year_level = ? AND section = ?", (year, section))
+                    block_id = cursor.fetchone()
+                    
+                    if block_id:
+                        conn.execute("INSERT INTO students (name, block_id) VALUES (?, ?)", (name, block_id[0]))
+                        conn.commit()
+                        show_success_message(f"Student '{name}' added successfully!")
+        else:
+                        messagebox.showerror("Error", "Selected block not found")
+                else:
+                    conn.execute("INSERT INTO students (name) VALUES (?)", (name,))
+                    conn.commit()
+                    show_success_message(f"Student '{name}' added successfully!")
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Failed to add student: {str(e)}")
+    
+    def add_faculty(name, dept_name, rank):
+        if not name:
+            messagebox.showerror("Error", "Please enter faculty name")
+            return
+        
+        try:
+            import db
+            with db.connect() as conn:
+                if dept_name:
+                    cursor = conn.execute("SELECT id FROM departments WHERE name = ?", (dept_name,))
+                    dept_id = cursor.fetchone()
+                    
+                    if dept_id:
+                        conn.execute("INSERT INTO faculty (name, department_id, rank) VALUES (?, ?, ?)", (name, dept_id[0], rank))
+                        conn.commit()
+                        show_success_message(f"Faculty member '{name}' added successfully!")
+                    else:
+                        messagebox.showerror("Error", "Selected department not found")
+                else:
+                    conn.execute("INSERT INTO faculty (name, rank) VALUES (?, ?)", (name, rank))
+                    conn.commit()
+                    show_success_message(f"Faculty member '{name}' added successfully!")
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Failed to add faculty member: {str(e)}")
+    
+    def add_department(name):
+        if not name:
+            messagebox.showerror("Error", "Please enter department name")
+            return
+        
+        try:
+            import db
+            with db.connect() as conn:
+                conn.execute("INSERT INTO departments (name) VALUES (?)", (name,))
+                conn.commit()
+                show_success_message(f"Department '{name}' added successfully!")
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Failed to add department: {str(e)}")
+    
+    def add_subject(code, name, units):
+        if not all([code, name, units]):
+            messagebox.showerror("Error", "Please fill in all fields")
+            return
+        
+        try:
+            units_float = float(units)
+            import db
+            with db.connect() as conn:
+                conn.execute("INSERT INTO subjects (code, name, units) VALUES (?, ?, ?)", (code, name, units_float))
+                conn.commit()
+                show_success_message(f"Subject '{name}' added successfully!")
+        except ValueError:
+            messagebox.showerror("Error", "Units must be a valid number")
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Failed to add subject: {str(e)}")
+    
+    def add_block(year, section):
+        if not year:
+            messagebox.showerror("Error", "Please enter year level")
+            return
+        
+        try:
+            year_int = int(year)
+            import db
+            with db.connect() as conn:
+                conn.execute("INSERT INTO blocks (year_level, section) VALUES (?, ?)", (year_int, section))
+                conn.commit()
+                show_success_message(f"Block Year {year_int} Section {section} added successfully!")
+        except ValueError:
+            messagebox.showerror("Error", "Year level must be a valid number")
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Failed to add block: {str(e)}")
+    
+    def show_teaching_assignment_form():
+        form_frame = CTkFrame(content_frame, fg_color="transparent")
+        form_frame.pack(fill="both", expand=True, padx=30, pady=30)
+        
+        CTkLabel(
+            form_frame, 
+            text="Add New Teaching Assignment", 
+            font=("Arial", 20, "bold"), 
+            text_color="#691612"
+        ).pack(pady=(0, 20))
+        
+        fields_frame = CTkFrame(form_frame, fg_color="transparent")
+        fields_frame.pack(fill="x")
+        
+        # Faculty selection
+        faculty_frame = CTkFrame(fields_frame, fg_color="transparent")
+        faculty_frame.pack(fill="x", pady=10)
+        CTkLabel(faculty_frame, text="Faculty Member:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        
+        faculty_members = []
+        try:
+            import db
+            with db.connect() as conn:
+                cursor = conn.execute("SELECT id, name FROM faculty")
+                faculty_members = cursor.fetchall()
+        except:
+            pass
+        
+        if faculty_members:
+            faculty_options = [f[1] for f in faculty_members]
+            faculty_var = StringVar()
+            faculty_dropdown = CTkOptionMenu(
+                faculty_frame,
+                variable=faculty_var,
+                values=faculty_options,
+                fg_color="#F8F9FA",
+                button_color="#E9ECEF",
+                button_hover_color="#DDE2E6",
+                text_color="#333333",
+                height=35,
+                font=("Arial", 14)
+            )
+            faculty_dropdown.pack(fill="x", pady=(5, 0))
+            faculty_dropdown.set(faculty_options[0])
+        else:
+            CTkLabel(faculty_frame, text="No faculty members available. Create faculty first.", font=("Arial", 12), text_color="#6C757D").pack(pady=(5, 0))
+        
+        # Subject selection
+        subject_frame = CTkFrame(fields_frame, fg_color="transparent")
+        subject_frame.pack(fill="x", pady=10)
+        CTkLabel(subject_frame, text="Subject:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        
+        subjects = []
+        try:
+            import db
+            with db.connect() as conn:
+                cursor = conn.execute("SELECT id, code, name FROM subjects")
+                subjects = cursor.fetchall()
+        except:
+            pass
+        
+        if subjects:
+            subject_options = [f"{s[1]} - {s[2]}" for s in subjects]
+            subject_var = StringVar()
+            subject_dropdown = CTkOptionMenu(
+                subject_frame,
+                variable=subject_var,
+                values=subject_options,
+                fg_color="#F8F9FA",
+                button_color="#E9ECEF",
+                button_hover_color="#DDE2E6",
+                text_color="#333333",
+                height=35,
+                font=("Arial", 14)
+            )
+            subject_dropdown.pack(fill="x", pady=(5, 0))
+            subject_dropdown.set(subject_options[0])
+        else:
+            CTkLabel(subject_frame, text="No subjects available. Create subjects first.", font=("Arial", 12), text_color="#6C757D").pack(pady=(5, 0))
+        
+        # Block selection
+        block_frame = CTkFrame(fields_frame, fg_color="transparent")
+        block_frame.pack(fill="x", pady=10)
+        CTkLabel(block_frame, text="Block:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        
+        blocks = []
+        try:
+            import db
+            with db.connect() as conn:
+                cursor = conn.execute("SELECT id, year_level, section FROM blocks")
+                blocks = cursor.fetchall()
+        except:
+            pass
+        
+        if blocks:
+            block_options = [f"Year {b[1]} - Section {b[2]}" for b in blocks]
+            block_var = StringVar()
+            block_dropdown = CTkOptionMenu(
+                block_frame,
+                variable=block_var,
+                values=block_options,
+                fg_color="#F8F9FA",
+                button_color="#E9ECEF",
+                button_hover_color="#DDE2E6",
+                text_color="#333333",
+                height=35,
+                font=("Arial", 14)
+            )
+            block_dropdown.pack(fill="x", pady=(5, 0))
+            if block_options:
+                block_dropdown.set(block_options[0])
+        else:
+            CTkLabel(block_frame, text="No blocks available. Create blocks first.", font=("Arial", 12), text_color="#6C757D").pack(pady=(5, 0))
+        
+        # Semester
+        semester_frame = CTkFrame(fields_frame, fg_color="transparent")
+        semester_frame.pack(fill="x", pady=10)
+        CTkLabel(semester_frame, text="Semester:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        
+        semester_var = StringVar()
+        semester_dropdown = CTkOptionMenu(
+            semester_frame,
+            variable=semester_var,
+            values=["First Semester", "Second Semester", "Summer"],
+            fg_color="#F8F9FA",
+            button_color="#E9ECEF",
+            button_hover_color="#DDE2E6",
+            text_color="#333333",
+            height=35,
+            font=("Arial", 14)
+        )
+        semester_dropdown.pack(fill="x", pady=(5, 0))
+        semester_dropdown.set("First Semester")
+        
+        # Submit button
+        submit_btn = CTkButton(
+            form_frame,
+            text="Add Teaching Assignment",
+            command=lambda: add_teaching_assignment(
+                faculty_var.get() if 'faculty_var' in locals() else None,
+                subject_var.get() if 'subject_var' in locals() else None,
+                block_var.get() if 'block_var' in locals() else None,
+                semester_var.get()
+            ),
+            fg_color="#691612",
+            hover_color="#AC5353",
+            text_color="#FFFFFF",
+            font=("Arial", 14, "bold"),
+            height=40,
+            corner_radius=8
+        )
+        submit_btn.pack(pady=30)
+    
+    def add_teaching_assignment(faculty_name, subject_info, block_info, semester):
+        if not all([faculty_name, subject_info, block_info]):
+            messagebox.showerror("Error", "Please select faculty, subject, and block")
+            return
+        
+        try:
+            import db
+            with db.connect() as conn:
+                # Get faculty ID
+                cursor = conn.execute("SELECT id FROM faculty WHERE name = ?", (faculty_name,))
+                faculty_id = cursor.fetchone()
+                
+                if not faculty_id:
+                    messagebox.showerror("Error", "Selected faculty member not found")
+                    return
+                
+                # Get subject ID
+                subject_code = subject_info.split(" - ")[0]
+                cursor = conn.execute("SELECT id FROM subjects WHERE code = ?", (subject_code,))
+                subject_id = cursor.fetchone()
+                
+                if not subject_id:
+                    messagebox.showerror("Error", "Selected subject not found")
+                    return
+                
+                # Get block ID
+                block_parts = block_info.split(" - Section ")
+                year = int(block_parts[0].replace("Year ", ""))
+                section = block_parts[1]
+                
+                cursor = conn.execute("SELECT id FROM blocks WHERE year_level = ? AND section = ?", (year, section))
+                block_id = cursor.fetchone()
+                
+                if not block_id:
+                    messagebox.showerror("Error", "Selected block not found")
+                    return
+                
+                # Insert teaching assignment
+                conn.execute(
+                    "INSERT INTO teaching_assignments (faculty_id, subject_id, block_id, semester) VALUES (?, ?, ?, ?)",
+                    (faculty_id[0], subject_id[0], block_id[0], semester)
+                )
+                conn.commit()
+                show_success_message(f"Teaching assignment for {faculty_name} added successfully!")
+                
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Failed to add teaching assignment: {str(e)}")
+    
+    def show_enrollment_form():
+        form_frame = CTkFrame(content_frame, fg_color="transparent")
+        form_frame.pack(fill="both", expand=True, padx=30, pady=30)
+        
+    CTkLabel(
+            form_frame, 
+            text="Add New Enrollment", 
+            font=("Arial", 20, "bold"), 
+            text_color="#691612"
+        ).pack(pady=(0, 20))
+        
+        fields_frame = CTkFrame(form_frame, fg_color="transparent")
+        fields_frame.pack(fill="x")
+        
+        # Student selection
+        student_frame = CTkFrame(fields_frame, fg_color="transparent")
+        student_frame.pack(fill="x", pady=10)
+        CTkLabel(student_frame, text="Student:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        
+        students = []
+        try:
+            import db
+            with db.connect() as conn:
+                cursor = conn.execute("SELECT id, name FROM students")
+                students = cursor.fetchall()
+        except:
+            pass
+        
+        if students:
+            student_options = [s[1] for s in students]
+            student_var = StringVar()
+            student_dropdown = CTkOptionMenu(
+                student_frame,
+                variable=student_var,
+                values=student_options,
+                fg_color="#F8F9FA",
+                button_color="#E9ECEF",
+                button_hover_color="#DDE2E6",
+                text_color="#333333",
+                height=35,
+                font=("Arial", 14)
+            )
+            student_dropdown.pack(fill="x", pady=(5, 0))
+            student_dropdown.set(student_options[0])
+        else:
+            CTkLabel(student_frame, text="No students available. Create students first.", font=("Arial", 12), text_color="#6C757D").pack(pady=(5, 0))
+        
+        # Subject selection
+        subject_frame = CTkFrame(fields_frame, fg_color="transparent")
+        subject_frame.pack(fill="x", pady=10)
+        CTkLabel(subject_frame, text="Subject:", font=("Arial", 14), text_color="#333333").pack(anchor="w")
+        
+        subjects = []
+        try:
+            import db
+            with db.connect() as conn:
+                cursor = conn.execute("SELECT id, code, name FROM subjects")
+                subjects = cursor.fetchall()
+        except:
+            pass
+        
+        if subjects:
+            subject_options = [f"{s[1]} - {s[2]}" for s in subjects]
+            subject_var = StringVar()
+            subject_dropdown = CTkOptionMenu(
+                subject_frame,
+                variable=subject_var,
+                values=subject_options,
+                fg_color="#F8F9FA",
+                button_color="#E9ECEF",
+                button_hover_color="#DDE2E6",
+                text_color="#333333",
+                height=35,
+                font=("Arial", 14)
+            )
+            subject_dropdown.pack(fill="x", pady=(5, 0))
+            subject_dropdown.set(subject_options[0])
+        else:
+            CTkLabel(subject_frame, text="No subjects available. Create subjects first.", font=("Arial", 12), text_color="#6C757D").pack(pady=(5, 0))
+        
+        # Submit button
+        submit_btn = CTkButton(
+            form_frame,
+            text="Add Enrollment",
+            command=lambda: add_enrollment(
+                student_var.get() if 'student_var' in locals() else None,
+                subject_var.get() if 'subject_var' in locals() else None
+            ),
+            fg_color="#691612",
+            hover_color="#AC5353",
+            text_color="#FFFFFF",
+        font=("Arial", 14, "bold"), 
+            height=40,
+            corner_radius=8
+        )
+        submit_btn.pack(pady=30)
+    
+    def add_enrollment(student_name, subject_info):
+        if not all([student_name, subject_info]):
+            messagebox.showerror("Error", "Please select student and subject")
+            return
+        
+        try:
+            import db
+            with db.connect() as conn:
+                # Get student and their assigned block
+                cursor = conn.execute("SELECT id, block_id FROM students WHERE name = ?", (student_name,))
+                student_row = cursor.fetchone()
+                
+                if not student_row:
+                    messagebox.showerror("Error", "Selected student not found")
+                    return
+                student_id, student_block_id = student_row[0], student_row[1]
+                if student_block_id is None:
+                    messagebox.showerror("Error", "Selected student has no assigned block. Assign a block first in the Students tab.")
+                    return
+                
+                # Get subject ID
+                subject_code = subject_info.split(" - ")[0]
+                cursor = conn.execute("SELECT id FROM subjects WHERE code = ?", (subject_code,))
+                subject_id = cursor.fetchone()
+                
+                if not subject_id:
+                    messagebox.showerror("Error", "Selected subject not found")
+                    return
+                
+                # Check if enrollment already exists
+                cursor = conn.execute(
+                    "SELECT id FROM enrollments WHERE student_id = ? AND subject_id = ? AND block_id = ?",
+                    (student_id, subject_id[0], student_block_id)
+                )
+                if cursor.fetchone():
+                    messagebox.showerror("Error", "Student is already enrolled in this subject for this block")
+                    return
+                
+                # Insert enrollment
+                conn.execute(
+                    "INSERT INTO enrollments (student_id, subject_id, block_id) VALUES (?, ?, ?)",
+                    (student_id, subject_id[0], student_block_id)
+                )
+                conn.commit()
+                show_success_message(f"Enrollment for {student_name} added successfully!")
+                
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Failed to add enrollment: {str(e)}")
+    
+    # Show default tab
+    show_tab("Students")
+
+def show_database_page():
+    for widget in main_frame.winfo_children():
+        widget.destroy()
+    
+    container = CTkFrame(master=main_frame, fg_color="transparent")
+    container.pack(fill="both", expand=True, padx=20, pady=20)
+    
+    # Title
+    title_label = CTkLabel(
+        container, 
+        text="Database Viewer", 
+        font=("Arial", 24, "bold"), 
+        text_color="#691612"
+    )
+    title_label.pack(pady=(0, 20))
+    
+    # Create tabs for different tables
+    tab_frame = CTkFrame(container, fg_color="transparent")
+    tab_frame.pack(fill="x", pady=(0, 20))
+    
+    # Tab buttons
+    tab_buttons = {}
+    entities = ["Students", "Faculty", "Departments", "Subjects", "Blocks", "Enrollments", "Teaching Assignments"]
+    
+    for i, entity in enumerate(entities):
+        btn = CTkButton(
+            tab_frame,
+            text=entity,
+            command=lambda e=entity: show_table_tab(e),
+            fg_color="#AC5353" if i == 0 else "#F1F3F5",
+            text_color="#FFFFFF" if i == 0 else "#333333",
+            hover_color="#BF3131" if i == 0 else "#E9ECEF",
+            width=140,
+            height=35,
+            corner_radius=8
+        )
+        btn.pack(side="left", padx=5)
+        tab_buttons[entity] = btn
+    
+    # Content area
+    content_frame = CTkFrame(container, fg_color="#FFFFFF", corner_radius=10)
+    content_frame.pack(fill="both", expand=True)
+    
+    def show_table_tab(table_name):
+        # Update button colors
+        for name, btn in tab_buttons.items():
+            if name == table_name:
+                btn.configure(fg_color="#AC5353", text_color="#FFFFFF")
+            else:
+                btn.configure(fg_color="#F1F3F5", text_color="#333333")
+        
+        # Clear content and show new table
+        for widget in content_frame.winfo_children():
+            widget.destroy()
+        
+        # Header with search and export
+        header_frame = CTkFrame(content_frame, fg_color="transparent")
+        header_frame.pack(fill="x", padx=20, pady=20)
     
     CTkLabel(
-        title_contents, 
-        text="User List", 
-        font=("Arial", 14, "bold"), 
-        text_color="#FFFFFF"
+            header_frame, 
+            text=f"{table_name} Table", 
+            font=("Arial", 20, "bold"), 
+            text_color="#691612"
     ).pack(side="left")
     
-    search_frame = CTkFrame(master=title_contents, fg_color="transparent")
+        # Search frame
+        search_frame = CTkFrame(header_frame, fg_color="transparent")
     search_frame.pack(side="right")
     
     CTkLabel(
         search_frame, 
         text="Search:", 
-        font=("Arial", 11), 
-        text_color="#FFFFFF"
-    ).pack(side="left", padx=(0, 5))
+            font=("Arial", 14), 
+            text_color="#333333"
+        ).pack(side="left", padx=(0, 10))
     
     search_entry = CTkEntry(
         search_frame, 
-        fg_color="#FFFFFF", 
-        border_color="#E0E0E0",
+            fg_color="#F8F9FA", 
+            border_color="#E9ECEF",
         text_color="#333333",
         corner_radius=5,
-        width=130,
-        height=22
-    )
-    search_entry.pack(side="left")
+            width=200,
+            height=32
+        )
+        search_entry.pack(side="left", padx=(0, 10))
+        
+        # Export button
+        export_btn = CTkButton(
+            search_frame,
+            text="Export CSV",
+            command=lambda: export_table_data(table_name),
+            fg_color="#691612",
+            hover_color="#AC5353",
+            text_color="#FFFFFF",
+            font=("Arial", 12, "bold"),
+            height=32,
+            corner_radius=6
+        )
+        export_btn.pack(side="left")
+        
+        # Table container
+        table_container = CTkFrame(content_frame, fg_color="transparent")
+        table_container.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+        # Create table based on table name
+        if table_name == "Students":
+            show_students_table(table_container, search_entry)
+        elif table_name == "Faculty":
+            show_faculty_table(table_container, search_entry)
+        elif table_name == "Departments":
+            show_departments_table(table_container, search_entry)
+        elif table_name == "Subjects":
+            show_subjects_table(table_container, search_entry)
+        elif table_name == "Blocks":
+            show_blocks_table(table_container, search_entry)
+        elif table_name == "Enrollments":
+            show_enrollments_table(table_container, search_entry)
+        elif table_name == "Teaching Assignments":
+            show_teaching_assignments_table(table_container, search_entry)
     
-    table_container = CTkFrame(master=table_frame, fg_color="transparent")
-    table_container.pack(fill="both", expand=True, padx=15, pady=15)
-    
+    def show_students_table(container, search_entry):
+        # Create Treeview
     style = ttk.Style()
     style.configure(
         "Treeview",
         background="#FFFFFF",
         foreground="#333333",
-        rowheight=28,
+            rowheight=30,
         fieldbackground="#FFFFFF"
     )
     style.configure(
         "Treeview.Heading",
-        background="#F0F0F0",
+            background="#F8F9FA",
         foreground="#691612",
-        font=("Arial", 11, "bold")
+            font=("Arial", 12, "bold")
     )
     style.map("Treeview", background=[("selected", "#BF3131")], foreground=[("selected", "#FFFFFF")])
     
-    tree_scroll = CTkScrollbar(table_container, orientation="vertical")
+        # Scrollbar
+        tree_scroll = CTkScrollbar(container, orientation="vertical")
     tree_scroll.pack(side="right", fill="y")
     
-    user_table = ttk.Treeview(
-        table_container,
-        columns=("Name", "Username", "Password", "Role"),
+        # Treeview
+        tree = ttk.Treeview(
+            container,
+            columns=("ID", "Name", "Block"),
         show="headings",
         style="Treeview",
         yscrollcommand=tree_scroll.set
     )
-    tree_scroll.configure(command=user_table.yview)
-    user_table.pack(fill="both", expand=True)
-    
-    user_table.heading("Name", text="Full Name")
-    user_table.heading("Username", text="Username")
-    user_table.heading("Password", text="Password")
-    user_table.heading("Role", text="Role")
-    
-    user_table.column("Name", anchor="w", width=150, minwidth=120)
-    user_table.column("Username", anchor="w", width=150, minwidth=120)
-    user_table.column("Password", anchor="center", width=150, minwidth=100)
-    user_table.column("Role", anchor="center", width=100, minwidth=80)
-    
-    user_table._selected_index = None
-    
-    def clear_form():
-        name_entry.delete(0, 'end')
-        username_entry.delete(0, 'end')
-        password_entry.delete(0, 'end')
-        role_option.set("Student")
-        user_table.selection_clear()
+        tree_scroll.configure(command=tree.yview)
+        tree.pack(fill="both", expand=True)
         
-    def add_user():
-        data = [name_entry.get(), username_entry.get(), password_entry.get(), role_option.get()]
-        if all(data):
-            user_data.append(data)
-            update_table()
-            clear_form()
-            messagebox.showinfo("Success", "User added successfully")
-        else:
-            messagebox.showerror("Error", "Please fill in all fields")
-    
-    def update_user():
-        selected = user_table.get_selected()
-        if selected:
-            index = user_table._selected_index
-            user_data[index] = [name_entry.get(), username_entry.get(), password_entry.get(), role_option.get()]
-            update_table()
-            clear_form()
-            messagebox.showinfo("Success", "User updated successfully")
-        else:
-            messagebox.showerror("Error", "Please select a user to update")
-    
-    def delete_user():
-        selected = user_table.get_selected()
-        if selected:
-            index = user_table._selected_index
-            user_data.pop(index)
-            update_table()
-            clear_form()
-            messagebox.showinfo("Success", "User deleted successfully")
-        else:
-            messagebox.showerror("Error", "Please select a user to delete")
-    
-    def update_table():
-        user_table.delete(*user_table.get_children())
-        for i, row in enumerate(user_data):
-            user_table.insert("", "end", iid=i, values=row)
-    
-    def on_select(event):
-        selected = user_table.focus()
-        if selected:
-            user_table._selected_index = int(selected)
-            vals = user_table.item(selected, "values")
-            name_entry.delete(0, "end")
-            name_entry.insert(0, vals[0])
-            username_entry.delete(0, "end")
-            username_entry.insert(0, vals[1])
-            password_entry.delete(0, "end")
-            password_entry.insert(0, vals[2])
-            role_option.set(vals[3])
-    
-    def get_selected():
-        selected = user_table.focus()
-        return user_table.item(selected, "values") if selected else None
-    
-    def filter_users(event):
-        search_text = search_entry.get().lower()
-        user_table.delete(*user_table.get_children())
+        # Headings
+        tree.heading("ID", text="ID")
+        tree.heading("Name", text="Student Name")
+        tree.heading("Block", text="Block")
         
-        for i, row in enumerate(user_data):
-            if any(search_text in str(field).lower() for field in row):
-                user_table.insert("", "end", iid=i, values=row)
+        # Columns
+        tree.column("ID", width=80, anchor="center")
+        tree.column("Name", width=300, anchor="w")
+        tree.column("Block", width=200, anchor="center")
+        
+        # Load data
+        def load_students_data():
+            tree.delete(*tree.get_children())
+            try:
+                import db
+                with db.connect() as conn:
+                    cursor = conn.execute("""
+                        SELECT s.id, s.name, 
+                               CASE 
+                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
+                                   ELSE 'No Block Assigned'
+                               END as block_info
+                        FROM students s
+                        LEFT JOIN blocks b ON s.block_id = b.id
+                        ORDER BY s.name
+                    """)
+                    for row in cursor.fetchall():
+                        tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Database Error", f"Failed to load students: {str(e)}")
+        
+        # Search functionality
+        def search_students(event):
+            search_term = search_entry.get().lower()
+            tree.delete(*tree.get_children())
+            try:
+                import db
+                with db.connect() as conn:
+                    cursor = conn.execute("""
+                        SELECT s.id, s.name, 
+                               CASE 
+                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
+                                   ELSE 'No Block Assigned'
+                               END as block_info
+                        FROM students s
+                        LEFT JOIN blocks b ON s.block_id = b.id
+                        WHERE s.name LIKE ? OR b.section LIKE ?
+                        ORDER BY s.name
+                    """, (f"%{search_term}%", f"%{search_term}%"))
+                    for row in cursor.fetchall():
+                        tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Database Error", f"Failed to search students: {str(e)}")
+        
+        search_entry.bind("<KeyRelease>", search_students)
+        load_students_data()
     
-    buttons[0].configure(command=add_user)
-    buttons[1].configure(command=update_user)
-    buttons[2].configure(command=delete_user)
-    buttons[3].configure(command=clear_form)
+    def show_faculty_table(container, search_entry):
+        style = ttk.Style()
+        style.configure("Treeview", background="#FFFFFF", foreground="#333333", rowheight=30, fieldbackground="#FFFFFF")
+        style.configure("Treeview.Heading", background="#F8F9FA", foreground="#691612", font=("Arial", 12, "bold"))
+        style.map("Treeview", background=[("selected", "#BF3131")], foreground=[("selected", "#FFFFFF")])
+        
+        tree_scroll = CTkScrollbar(container, orientation="vertical")
+        tree_scroll.pack(side="right", fill="y")
+        
+        tree = ttk.Treeview(
+            container,
+            columns=("ID", "Name", "Department", "Rank"),
+            show="headings",
+            style="Treeview",
+            yscrollcommand=tree_scroll.set
+        )
+        tree_scroll.configure(command=tree.yview)
+        tree.pack(fill="both", expand=True)
+        
+        tree.heading("ID", text="ID")
+        tree.heading("Name", text="Faculty Name")
+        tree.heading("Department", text="Department")
+        tree.heading("Rank", text="Rank")
+        
+        tree.column("ID", width=80, anchor="center")
+        tree.column("Name", width=250, anchor="w")
+        tree.column("Department", width=200, anchor="w")
+        tree.column("Rank", width=150, anchor="center")
+        
+        def load_faculty_data():
+            tree.delete(*tree.get_children())
+            try:
+                import db
+                with db.connect() as conn:
+                    cursor = conn.execute("""
+                        SELECT f.id, f.name, 
+                               COALESCE(d.name, 'No Department') as dept_name,
+                               f.rank
+                        FROM faculty f
+                        LEFT JOIN departments d ON f.department_id = d.id
+                        ORDER BY f.name
+                    """)
+                    for row in cursor.fetchall():
+                        tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Database Error", f"Failed to load faculty: {str(e)}")
+        
+        def search_faculty(event):
+            search_term = search_entry.get().lower()
+            tree.delete(*tree.get_children())
+            try:
+                import db
+                with db.connect() as conn:
+                    cursor = conn.execute("""
+                        SELECT f.id, f.name, 
+                               COALESCE(d.name, 'No Department') as dept_name,
+                               f.rank
+                        FROM faculty f
+                        LEFT JOIN departments d ON f.department_id = d.id
+                        WHERE f.name LIKE ? OR d.name LIKE ? OR f.rank LIKE ?
+                        ORDER BY f.name
+                    """, (f"%{search_term}%", f"%{search_term}%", f"%{search_term}%"))
+                    for row in cursor.fetchall():
+                        tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Database Error", f"Failed to search faculty: {str(e)}")
+        
+        search_entry.bind("<KeyRelease>", search_faculty)
+        load_faculty_data()
     
-    user_table.get_selected = get_selected
-    user_table.bind("<<TreeviewSelect>>", on_select)
-    search_entry.bind("<KeyRelease>", filter_users)
+    def show_departments_table(container, search_entry):
+        style = ttk.Style()
+        style.configure("Treeview", background="#FFFFFF", foreground="#333333", rowheight=30, fieldbackground="#FFFFFF")
+        style.configure("Treeview.Heading", background="#F8F9FA", foreground="#691612", font=("Arial", 12, "bold"))
+        style.map("Treeview", background=[("selected", "#BF3131")], foreground=[("selected", "#FFFFFF")])
+        
+        tree_scroll = CTkScrollbar(container, orientation="vertical")
+        tree_scroll.pack(side="right", fill="y")
+        
+        tree = ttk.Treeview(
+            container,
+            columns=("ID", "Name", "Faculty Count"),
+            show="headings",
+            style="Treeview",
+            yscrollcommand=tree_scroll.set
+        )
+        tree_scroll.configure(command=tree.yview)
+        tree.pack(fill="both", expand=True)
+        
+        tree.heading("ID", text="ID")
+        tree.heading("Name", text="Department Name")
+        tree.heading("Faculty Count", text="Faculty Members")
+        
+        tree.column("ID", width=80, anchor="center")
+        tree.column("Name", width=300, anchor="w")
+        tree.column("Faculty Count", width=150, anchor="center")
+        
+        def load_departments_data():
+            tree.delete(*tree.get_children())
+            try:
+                import db
+                with db.connect() as conn:
+                    cursor = conn.execute("""
+                        SELECT d.id, d.name, 
+                               COUNT(f.id) as faculty_count
+                        FROM departments d
+                        LEFT JOIN faculty f ON d.id = f.department_id
+                        GROUP BY d.id, d.name
+                        ORDER BY d.name
+                    """)
+                    for row in cursor.fetchall():
+                        tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Database Error", f"Failed to load departments: {str(e)}")
+        
+        def search_departments(event):
+            search_term = search_entry.get().lower()
+            tree.delete(*tree.get_children())
+            try:
+                import db
+                with db.connect() as conn:
+                    cursor = conn.execute("""
+                        SELECT d.id, d.name, 
+                               COUNT(f.id) as faculty_count
+                        FROM departments d
+                        LEFT JOIN faculty f ON d.id = f.department_id
+                        WHERE d.name LIKE ?
+                        GROUP BY d.id, d.name
+                        ORDER BY d.name
+                    """, (f"%{search_term}%",))
+                    for row in cursor.fetchall():
+                        tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Database Error", f"Failed to search departments: {str(e)}")
+        
+        search_entry.bind("<KeyRelease>", search_departments)
+        load_departments_data()
     
-    status_frame = CTkFrame(master=container, fg_color="#F8F8F8", corner_radius=5, height=25)
-    status_frame.pack(fill="x")
+    def show_subjects_table(container, search_entry):
+        style = ttk.Style()
+        style.configure("Treeview", background="#FFFFFF", foreground="#333333", rowheight=30, fieldbackground="#FFFFFF")
+        style.configure("Treeview.Heading", background="#F8F9FA", foreground="#691612", font=("Arial", 12, "bold"))
+        style.map("Treeview", background=[("selected", "#BF3131")], foreground=[("selected", "#FFFFFF")])
+        
+        tree_scroll = CTkScrollbar(container, orientation="vertical")
+        tree_scroll.pack(side="right", fill="y")
+        
+        tree = ttk.Treeview(
+            container,
+            columns=("ID", "Code", "Name", "Units"),
+            show="headings",
+            style="Treeview",
+            yscrollcommand=tree_scroll.set
+        )
+        tree_scroll.configure(command=tree.yview)
+        tree.pack(fill="both", expand=True)
+        
+        tree.heading("ID", text="ID")
+        tree.heading("Code", text="Subject Code")
+        tree.heading("Name", text="Subject Name")
+        tree.heading("Units", text="Units")
+        
+        tree.column("ID", width=80, anchor="center")
+        tree.column("Code", width=150, anchor="center")
+        tree.column("Name", width=350, anchor="w")
+        tree.column("Units", width=100, anchor="center")
+        
+        def load_subjects_data():
+            tree.delete(*tree.get_children())
+            try:
+                import db
+                with db.connect() as conn:
+                    cursor = conn.execute("SELECT id, code, name, units FROM subjects ORDER BY code")
+                    for row in cursor.fetchall():
+                        tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Database Error", f"Failed to load subjects: {str(e)}")
+        
+        def search_subjects(event):
+            search_term = search_entry.get().lower()
+            tree.delete(*tree.get_children())
+            try:
+                import db
+                with db.connect() as conn:
+                    cursor = conn.execute("""
+                        SELECT id, code, name, units 
+                        FROM subjects 
+                        WHERE code LIKE ? OR name LIKE ?
+                        ORDER BY code
+                    """, (f"%{search_term}%", f"%{search_term}%"))
+                    for row in cursor.fetchall():
+                        tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Database Error", f"Failed to search subjects: {str(e)}")
+        
+        search_entry.bind("<KeyRelease>", search_subjects)
+        load_subjects_data()
     
-    status_label = CTkLabel(
-        status_frame, 
-        text="Ready", 
-        font=("Arial", 10), 
-        text_color="#666666"
-    )
-    status_label.pack(side="left", padx=10)
+    def show_blocks_table(container, search_entry):
+        style = ttk.Style()
+        style.configure("Treeview", background="#FFFFFF", foreground="#333333", rowheight=30, fieldbackground="#FFFFFF")
+        style.configure("Treeview.Heading", background="#F8F9FA", foreground="#691612", font=("Arial", 12, "bold"))
+        style.map("Treeview", background=[("selected", "#BF3131")], foreground=[("selected", "#FFFFFF")])
+        
+        tree_scroll = CTkScrollbar(container, orientation="vertical")
+        tree_scroll.pack(side="right", fill="y")
+        
+        tree = ttk.Treeview(
+            container,
+            columns=("ID", "Year Level", "Section", "Student Count"),
+            show="headings",
+            style="Treeview",
+            yscrollcommand=tree_scroll.set
+        )
+        tree_scroll.configure(command=tree.yview)
+        tree.pack(fill="both", expand=True)
+        
+        tree.heading("ID", text="ID")
+        tree.heading("Year Level", text="Year Level")
+        tree.heading("Section", text="Section")
+        tree.heading("Student Count", text="Students")
+        
+        tree.column("ID", width=80, anchor="center")
+        tree.column("Year Level", width=120, anchor="center")
+        tree.column("Section", width=100, anchor="center")
+        tree.column("Student Count", width=120, anchor="center")
+        
+        def load_blocks_data():
+            tree.delete(*tree.get_children())
+            try:
+                import db
+                with db.connect() as conn:
+                    cursor = conn.execute("""
+                        SELECT b.id, b.year_level, b.section,
+                               COUNT(s.id) as student_count
+                        FROM blocks b
+                        LEFT JOIN students s ON b.id = s.block_id
+                        GROUP BY b.id, b.year_level, b.section
+                        ORDER BY b.year_level, b.section
+                    """)
+                    for row in cursor.fetchall():
+                        tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Database Error", f"Failed to load blocks: {str(e)}")
+        
+        def search_blocks(event):
+            search_term = search_entry.get().lower()
+            tree.delete(*tree.get_children())
+            try:
+                import db
+                with db.connect() as conn:
+                    cursor = conn.execute("""
+                        SELECT b.id, b.year_level, b.section,
+                               COUNT(s.id) as student_count
+                        FROM blocks b
+                        LEFT JOIN students s ON b.id = s.block_id
+                        WHERE CAST(b.year_level AS TEXT) LIKE ? OR b.section LIKE ?
+                        GROUP BY b.id, b.year_level, b.section
+                        ORDER BY b.year_level, b.section
+                    """, (f"%{search_term}%", f"%{search_term}%"))
+                    for row in cursor.fetchall():
+                        tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Database Error", f"Failed to search blocks: {str(e)}")
+        
+        search_entry.bind("<KeyRelease>", search_blocks)
+        load_blocks_data()
     
-    update_table()
+    def show_enrollments_table(container, search_entry):
+        style = ttk.Style()
+        style.configure("Treeview", background="#FFFFFF", foreground="#333333", rowheight=30, fieldbackground="#FFFFFF")
+        style.configure("Treeview.Heading", background="#F8F9FA", foreground="#691612", font=("Arial", 12, "bold"))
+        style.map("Treeview", background=[("selected", "#BF3131")], foreground=[("selected", "#FFFFFF")])
+        
+        tree_scroll = CTkScrollbar(container, orientation="vertical")
+        tree_scroll.pack(side="right", fill="y")
+        
+        tree = ttk.Treeview(
+            container,
+            columns=("ID", "Student", "Subject", "Block"),
+            show="headings",
+            style="Treeview",
+            yscrollcommand=tree_scroll.set
+        )
+        tree_scroll.configure(command=tree.yview)
+        tree.pack(fill="both", expand=True)
+        
+        tree.heading("ID", text="ID")
+        tree.heading("Student", text="Student Name")
+        tree.heading("Subject", text="Subject")
+        tree.heading("Block", text="Block")
+        
+        tree.column("ID", width=80, anchor="center")
+        tree.column("Student", width=250, anchor="w")
+        tree.column("Subject", width=250, anchor="w")
+        tree.column("Block", width=200, anchor="center")
+        
+        def load_enrollments_data():
+            tree.delete(*tree.get_children())
+            try:
+                import db
+                with db.connect() as conn:
+                    cursor = conn.execute("""
+                        SELECT e.id, s.name as student_name,
+                               sub.name as subject_name,
+                               CASE 
+                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
+                                   ELSE 'No Block'
+                               END as block_info
+                        FROM enrollments e
+                        LEFT JOIN students s ON e.student_id = s.id
+                        LEFT JOIN subjects sub ON e.subject_id = sub.id
+                        LEFT JOIN blocks b ON e.block_id = b.id
+                        ORDER BY s.name
+                    """)
+                    for row in cursor.fetchall():
+                        tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Database Error", f"Failed to load enrollments: {str(e)}")
+        
+        def search_enrollments(event):
+            search_term = search_entry.get().lower()
+            tree.delete(*tree.get_children())
+            try:
+                import db
+                with db.connect() as conn:
+                    cursor = conn.execute("""
+                        SELECT e.id, s.name as student_name,
+                               sub.name as subject_name,
+                               CASE 
+                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
+                                   ELSE 'No Block'
+                               END as block_info
+                        FROM enrollments e
+                        LEFT JOIN students s ON e.student_id = s.id
+                        LEFT JOIN subjects sub ON e.subject_id = sub.id
+                        LEFT JOIN blocks b ON e.block_id = b.id
+                        WHERE s.name LIKE ? OR sub.name LIKE ? OR b.section LIKE ?
+                        ORDER BY s.name
+                    """, (f"%{search_term}%", f"%{search_term}%", f"%{search_term}%"))
+                    for row in cursor.fetchall():
+                        tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Database Error", f"Failed to search enrollments: {str(e)}")
+        
+        search_entry.bind("<KeyRelease>", search_enrollments)
+        load_enrollments_data()
+    
+    def show_teaching_assignments_table(container, search_entry):
+        style = ttk.Style()
+        style.configure("Treeview", background="#FFFFFF", foreground="#333333", rowheight=30, fieldbackground="#FFFFFF")
+        style.configure("Treeview.Heading", background="#F8F9FA", foreground="#691612", font=("Arial", 12, "bold"))
+        style.map("Treeview", background=[("selected", "#BF3131")], foreground=[("selected", "#FFFFFF")])
+        
+        tree_scroll = CTkScrollbar(container, orientation="vertical")
+        tree_scroll.pack(side="right", fill="y")
+        
+        tree = ttk.Treeview(
+            container,
+            columns=("ID", "Faculty", "Subject", "Block", "Semester"),
+            show="headings",
+            style="Treeview",
+            yscrollcommand=tree_scroll.set
+        )
+        tree_scroll.configure(command=tree.yview)
+        tree.pack(fill="both", expand=True)
+        
+        tree.heading("ID", text="ID")
+        tree.heading("Faculty", text="Faculty Name")
+        tree.heading("Subject", text="Subject")
+        tree.heading("Block", text="Block")
+        tree.heading("Semester", text="Semester")
+        
+        tree.column("ID", width=80, anchor="center")
+        tree.column("Faculty", width=200, anchor="w")
+        tree.column("Subject", width=200, anchor="w")
+        tree.column("Block", width=180, anchor="center")
+        tree.column("Semester", width=120, anchor="center")
+        
+        def load_teaching_assignments_data():
+            tree.delete(*tree.get_children())
+            try:
+                import db
+                with db.connect() as conn:
+                    cursor = conn.execute("""
+                        SELECT ta.id, f.name as faculty_name,
+                               sub.name as subject_name,
+                               CASE 
+                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
+                                   ELSE 'No Block'
+                               END as block_info,
+                               COALESCE(ta.semester, 'Not Set') as semester
+                        FROM teaching_assignments ta
+                        LEFT JOIN faculty f ON ta.faculty_id = f.id
+                        LEFT JOIN subjects sub ON ta.subject_id = sub.id
+                        LEFT JOIN blocks b ON ta.block_id = b.id
+                        ORDER BY f.name
+                    """)
+                    for row in cursor.fetchall():
+                        tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Database Error", f"Failed to load teaching assignments: {str(e)}")
+        
+        def search_teaching_assignments(event):
+            search_term = search_entry.get().lower()
+            tree.delete(*tree.get_children())
+            try:
+                import db
+                with db.connect() as conn:
+                    cursor = conn.execute("""
+                        SELECT ta.id, f.name as faculty_name,
+                               sub.name as subject_name,
+                               CASE 
+                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
+                                   ELSE 'No Block'
+                               END as block_info,
+                               COALESCE(ta.semester, 'Not Set') as semester
+                        FROM teaching_assignments ta
+                        LEFT JOIN faculty f ON ta.faculty_id = f.id
+                        LEFT JOIN subjects sub ON ta.subject_id = sub.id
+                        LEFT JOIN blocks b ON ta.block_id = b.id
+                        WHERE f.name LIKE ? OR sub.name LIKE ? OR b.section LIKE ? OR ta.semester LIKE ?
+                        ORDER BY f.name
+                    """, (f"%{search_term}%", f"%{search_term}%", f"%{search_term}%", f"%{search_term}%"))
+                    for row in cursor.fetchall():
+                        tree.insert("", "end", values=row)
+            except Exception as e:
+                messagebox.showerror("Database Error", f"Failed to search teaching assignments: {str(e)}")
+        
+        search_entry.bind("<KeyRelease>", search_teaching_assignments)
+        load_teaching_assignments_data()
+    
+    def export_table_data(table_name):
+        try:
+            import db
+            import pandas as pd
+            from tkinter import filedialog
+            
+            # Get file path
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV Files", "*.csv"), ("Excel Files", "*.xlsx")],
+                initialfile=f"{table_name.lower().replace(' ', '_')}_export"
+            )
+            
+            if not file_path:
+                return
+            
+            # Export data based on table
+            with db.connect() as conn:
+                if table_name == "Students":
+                    df = pd.read_sql_query("""
+                        SELECT s.id, s.name, 
+                               CASE 
+                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
+                                   ELSE 'No Block Assigned'
+                               END as block_info
+                        FROM students s
+                        LEFT JOIN blocks b ON s.block_id = b.id
+                        ORDER BY s.name
+                    """, conn)
+                elif table_name == "Faculty":
+                    df = pd.read_sql_query("""
+                        SELECT f.id, f.name, 
+                               COALESCE(d.name, 'No Department') as dept_name,
+                               f.rank
+                        FROM faculty f
+                        LEFT JOIN departments d ON f.department_id = d.id
+                        ORDER BY f.name
+                    """, conn)
+                elif table_name == "Departments":
+                    df = pd.read_sql_query("""
+                        SELECT d.id, d.name, 
+                               COUNT(f.id) as faculty_count
+                        FROM departments d
+                        LEFT JOIN faculty f ON d.id = f.department_id
+                        GROUP BY d.id, d.name
+                        ORDER BY d.name
+                    """, conn)
+                elif table_name == "Subjects":
+                    df = pd.read_sql_query("SELECT id, code, name, units FROM subjects ORDER BY code", conn)
+                elif table_name == "Blocks":
+                    df = pd.read_sql_query("""
+                        SELECT b.id, b.year_level, b.section,
+                               COUNT(s.id) as student_count
+                        FROM blocks b
+                        LEFT JOIN students s ON b.id = s.block_id
+                        GROUP BY b.id, b.year_level, b.section
+                        ORDER BY b.year_level, b.section
+                    """, conn)
+                elif table_name == "Enrollments":
+                    df = pd.read_sql_query("""
+                        SELECT e.id, s.name as student_name,
+                               sub.name as subject_name,
+                               CASE 
+                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
+                                   ELSE 'No Block'
+                               END as block_info
+                        FROM enrollments e
+                        LEFT JOIN students s ON e.student_id = s.id
+                        LEFT JOIN subjects sub ON e.subject_id = sub.id
+                        LEFT JOIN blocks b ON e.block_id = b.id
+                        ORDER BY s.name
+                    """, conn)
+                elif table_name == "Teaching Assignments":
+                    df = pd.read_sql_query("""
+                        SELECT ta.id, f.name as faculty_name,
+                               sub.name as subject_name,
+                               CASE 
+                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
+                                   ELSE 'No Block'
+                               END as block_info,
+                               COALESCE(ta.semester, 'Not Set') as semester
+                        FROM teaching_assignments ta
+                        LEFT JOIN faculty f ON ta.faculty_id = f.id
+                        LEFT JOIN subjects sub ON ta.subject_id = sub.id
+                        LEFT JOIN blocks b ON ta.block_id = b.id
+                        ORDER BY f.name
+                    """, conn)
+                
+                # Save file
+                if file_path.endswith('.csv'):
+                    df.to_csv(file_path, index=False)
+                else:
+                    df.to_excel(file_path, index=False)
+                
+                messagebox.showinfo("Export Successful", f"{table_name} data exported to {file_path}")
+                
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export data: {str(e)}")
+    
+    # Show default tab
+    show_table_tab("Students")
 
 def render_scan_page(main_frame, processed_results):
     for widget in main_frame.winfo_children():
@@ -671,8 +1936,19 @@ def render_scan_page(main_frame, processed_results):
 
     def start_scan():
         try:
-            if not teacher_var.get():
+            # Validate selections
+            teacher_name = teacher_var.get()
+            subject_label = subject_var.get()
+            block_label = block_var.get()
+
+            if not teacher_name or teacher_name in ("Loading...", "No assigned teachers", "Error loading teachers"):
                 messagebox.showerror("Error", "Please select a teacher before scanning.")
+                return
+            if not subject_label or subject_label in ("No subjects", "Error"):
+                messagebox.showerror("Error", "Please select a subject before scanning.")
+                return
+            if not block_label or block_label in ("No blocks", "Error"):
+                messagebox.showerror("Error", "Please select a block before scanning.")
                 return
             scanner = WIAScanner()
             info = scanner.initialize()
@@ -681,11 +1957,11 @@ def render_scan_page(main_frame, processed_results):
             if pages_scanned > 0:
                 status_label.configure(text=f"Batch scan completed. {pages_scanned} page(s) scanned.")
                 messagebox.showinfo("Scanning Complete", f"Successfully scanned {pages_scanned} page(s)")
-                results = process_work_folder(teacher_var.get())
+                results = process_work_folder(teacher_name)
                 if results:
                     processed_results.update(results)
                     status_label.configure(text="Processing complete! Go to Results page to view output.")
-                    update_preview(results.get(teacher_var.get(), []))
+                    update_preview(results.get(teacher_name, []))
                 else:
                     status_label.configure(text="No documents found to process.")
             else:
@@ -696,14 +1972,23 @@ def render_scan_page(main_frame, processed_results):
             messagebox.showerror("Scanner Error", str(e))
 
     def scan_existing():
-        if not teacher_var.get():
+        teacher_name = teacher_var.get()
+        subject_label = subject_var.get()
+        block_label = block_var.get()
+        if not teacher_name or teacher_name in ("Loading...", "No assigned teachers", "Error loading teachers"):
             messagebox.showerror("Error", "Please select a teacher before processing.")
             return
-        results = process_work_folder(teacher_var.get())
+        if not subject_label or subject_label in ("No subjects", "Error"):
+            messagebox.showerror("Error", "Please select a subject before processing.")
+            return
+        if not block_label or block_label in ("No blocks", "Error"):
+            messagebox.showerror("Error", "Please select a block before processing.")
+            return
+        results = process_work_folder(teacher_name)
         if results:
             processed_results.update(results)
             status_label.configure(text="Processing complete! Go to Results page to view output.")
-            update_preview(results.get(teacher_var.get(), []))
+            update_preview(results.get(teacher_name, []))
         else:
             status_label.configure(text="No documents found to process.")
 
@@ -751,10 +2036,96 @@ def render_scan_page(main_frame, processed_results):
     teacher_title.pack(pady=(10, 5), padx=15, anchor="w")
 
     teacher_var = StringVar()
+    subject_var = StringVar()
+    block_var = StringVar()
+
+    # Mappings to keep track of selected IDs
+    teacher_name_to_id = {}
+    subject_code_to_id = {}
+    block_label_to_id = {}
+
+    def on_teacher_change(selected_teacher_name: str):
+        # Load subjects for selected teacher
+        subject_code_to_id.clear()
+        subject_values = ["No subjects"]
+        try:
+            fid = teacher_name_to_id.get(selected_teacher_name)
+            import db
+            with db.connect() as conn:
+                rows = conn.execute(
+                    "SELECT DISTINCT s.id, s.code, s.name FROM teaching_assignments ta "
+                    "JOIN subjects s ON ta.subject_id = s.id "
+                    "WHERE ta.faculty_id = ? ORDER BY s.code",
+                    (fid,)
+                ).fetchall()
+            if rows:
+                subject_values = [f"{code} - {name}" for (sid, code, name) in rows]
+                for (sid, code, name) in rows:
+                    subject_code_to_id[code] = sid
+        except Exception:
+            subject_values = ["Error"]
+        subject_dropdown.configure(state="normal" if subject_values and subject_values[0] not in ("No subjects", "Error") else "disabled", values=subject_values)
+        subject_dropdown.set(subject_values[0])
+        # Trigger blocks load for the first subject
+        if subject_values and subject_values[0] not in ("No subjects", "Error"):
+            on_subject_change(subject_values[0])
+        else:
+            block_dropdown.configure(state="disabled", values=["No blocks"])
+            block_dropdown.set("No blocks")
+
+    def on_subject_change(selected_subject_label: str):
+        # Load blocks for selected teacher + subject
+        block_label_to_id.clear()
+        block_values = ["No blocks"]
+        try:
+            if not selected_subject_label or " - " not in selected_subject_label:
+                raise Exception("Invalid subject selection")
+            code = selected_subject_label.split(" - ")[0]
+            sid = subject_code_to_id.get(code)
+            fid = teacher_name_to_id.get(teacher_var.get())
+            import db
+            with db.connect() as conn:
+                rows = conn.execute(
+                    "SELECT DISTINCT b.id, b.year_level, b.section FROM teaching_assignments ta "
+                    "JOIN blocks b ON ta.block_id = b.id "
+                    "WHERE ta.faculty_id = ? AND ta.subject_id = ? ORDER BY b.year_level, b.section",
+                    (fid, sid)
+                ).fetchall()
+            if rows:
+                block_values = [f"Year {y} - Section {s}" for (bid, y, s) in rows]
+                for (bid, y, s) in rows:
+                    block_label_to_id[f"Year {y} - Section {s}"] = bid
+        except Exception:
+            block_values = ["Error"]
+        block_dropdown.configure(state="normal" if block_values and block_values[0] not in ("No blocks", "Error") else "disabled", values=block_values)
+        block_dropdown.set(block_values[0])
+
+    def load_teachers():
+        values = ["No assigned teachers"]
+        try:
+            import db
+            with db.connect() as conn:
+                rows = conn.execute(
+                    "SELECT DISTINCT f.id, f.name FROM teaching_assignments ta "
+                    "JOIN faculty f ON ta.faculty_id = f.id ORDER BY f.name"
+                ).fetchall()
+            if rows:
+                values = [name for (fid, name) in rows]
+                teacher_name_to_id.clear()
+                for (fid, name) in rows:
+                    teacher_name_to_id[name] = fid
+        except Exception:
+            values = ["Error loading teachers"]
+        teacher_dropdown.configure(values=values)
+        teacher_dropdown.set(values[0])
+        if values and values[0] not in ("No assigned teachers", "Error loading teachers"):
+            on_teacher_change(values[0])
+
     teacher_dropdown = CTkOptionMenu(
         teacher_frame,
         variable=teacher_var,
-        values=["Mr. Daniel Maligat", "Ma'am Brigueras"],
+        values=["Loading..."],
+        command=on_teacher_change,
         fg_color="#BF3131",
         button_color="#691612",
         button_hover_color="#AC5353",
@@ -766,7 +2137,65 @@ def render_scan_page(main_frame, processed_results):
         width=250,
         height=35
     )
-    teacher_dropdown.pack(padx=15, pady=10)
+    teacher_dropdown.pack(padx=15, pady=(10, 5))
+
+    # Subject selection (depends on teacher)
+    subject_label = CTkLabel(
+        teacher_frame,
+        text="Select Subject",
+        font=('Montserrat', 14, 'bold'),
+        text_color="#334155"
+    )
+    subject_label.pack(pady=(5, 0), padx=15, anchor="w")
+
+    subject_dropdown = CTkOptionMenu(
+        teacher_frame,
+        variable=subject_var,
+        values=["No subjects"],
+        command=on_subject_change,
+        fg_color="#BF3131",
+        button_color="#691612",
+        button_hover_color="#AC5353",
+        dropdown_fg_color="#FFFFFF",
+        dropdown_text_color="#333333",
+        dropdown_hover_color="#F0F0F0",
+        text_color="#FFFFFF",
+        font=('Montserrat', 14),
+        width=250,
+        height=35,
+        state="disabled"
+    )
+    subject_dropdown.pack(padx=15, pady=5)
+
+    # Block selection (depends on subject)
+    block_label = CTkLabel(
+        teacher_frame,
+        text="Select Block",
+        font=('Montserrat', 14, 'bold'),
+        text_color="#334155"
+    )
+    block_label.pack(pady=(5, 0), padx=15, anchor="w")
+
+    block_dropdown = CTkOptionMenu(
+        teacher_frame,
+        variable=block_var,
+        values=["No blocks"],
+        fg_color="#BF3131",
+        button_color="#691612",
+        button_hover_color="#AC5353",
+        dropdown_fg_color="#FFFFFF",
+        dropdown_text_color="#333333",
+        dropdown_hover_color="#F0F0F0",
+        text_color="#FFFFFF",
+        font=('Montserrat', 14),
+        width=250,
+        height=35,
+        state="disabled"
+    )
+    block_dropdown.pack(padx=15, pady=(5, 10))
+
+    # Load initial teacher list from DB
+    load_teachers()
 
     status_frame = CTkFrame(scanner_frame, fg_color="transparent")
     status_frame.pack(fill="x", padx=15, pady=5)
@@ -1129,7 +2558,8 @@ nav_actions = {
     "Scan": lambda: render_scan_page(main_frame, processed_results),
     "Print": lambda: print("Print clicked"),
     "Results": lambda: render_result_page(main_frame, processed_results),
-    "Accounts": render_user_page
+    "Accounts": render_user_page,
+    "Database": show_database_page
 }
 
 for item, action in nav_actions.items():
