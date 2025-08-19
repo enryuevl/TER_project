@@ -82,10 +82,10 @@ class CoordinateMapper:
     def load_image(self):
         try:
             # Get the path to the image
-            documents_folder = os.path.join(os.path.expanduser("~"), "Documents")
+            documents_folder = os.path.join(os.path.expanduser("~"), "Downloads")
             work_folder = os.path.join(documents_folder, "MyWork")
             scanned_folder = os.path.join(work_folder, "Scanned")
-            image_path = os.path.join(scanned_folder, "scan_066.bmp")
+            image_path = os.path.join(documents_folder, "test.jpg")
             
             print(f"Loading image from: {image_path}")
             

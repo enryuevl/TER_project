@@ -1,36 +1,8 @@
 import cv2
 import numpy as np
 
-def detect_circles(section_img, section_name="Section"):
-    gray = cv2.cvtColor(section_img, cv2.COLOR_BGR2GRAY)
-    # Increase blur size for better circle detection
-    blurred = cv2.GaussianBlur(gray, (5, 5), 1.5)
-
-    #pls dont fucking touch this
-    circles = cv2.HoughCircles(
-        blurred, 
-        cv2.HOUGH_GRADIENT, 
-        dp=1.5, 
-        param1=90, 
-        minDist=20,
-        param2=24,
-        minRadius=5,
-        maxRadius=14# Increased maximum radius
-    )
-
-    detected = []
-    
-    if circles is not None:
-        circles = np.uint16(np.around(circles))
-        for x, y, r in circles[0, :]:
-            cv2.circle(section_img, (x, y), r, (0, 255, 0), 1)
-            cv2.circle(section_img, (x, y), 2, (0, 255, 0), 3)
-            
-            detected.append((x, y, r))
-    else:
-        print("No circles detected.")
-
-    return section_img, detected
+import cv2
+import numpy as np
 
 def detect_vertical_lines(section_img, section_name="Section"):
     """
@@ -151,3 +123,38 @@ def detect_horizontal_lines(section_img, section_name="Section"):
         cv2.line(output, (0, y), (output.shape[1], y), (0, 255, 0), 2)
     
     return output, y_coords_filtered
+
+def detect_shaded_areas_connected(section_img, section_name="Section", fill_thresh=0.45):
+    gray = cv2.cvtColor(section_img, cv2.COLOR_BGR2GRAY)
+    
+    # Apply threshold to get binary image
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    
+    # Remove noise with morphological operations
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)  # Remove small noise
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)  # Fill small gaps
+    
+    
+    
+    # Find connected components
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    
+    detected_areas = []
+    for i in range(1, num_labels):  # Skip background (label 0)
+        area = stats[i, cv2.CC_STAT_AREA]
+        x = int(centroids[i][0])
+        y = int(centroids[i][1])
+        
+        # Stricter size filtering
+        if 80 < area < 400:  # Narrowed range to reduce false positives
+            # Filter shape
+        
+            perimeter = cv2.arcLength(cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0][i-1], True)
+            if perimeter > 0:
+                circularity = 4 * np.pi * area / (perimeter * perimeter)
+                if circularity > 0.6:  # Only keep roughly circular shapes
+                    detected_areas.append((x, y, area))
+                    cv2.circle(section_img, (x, y), 10, (0, 255, 0), 2)
+    
+    return section_img, detected_areas
