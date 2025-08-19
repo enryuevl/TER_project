@@ -411,7 +411,7 @@ def render_user_page():
         form_frame.pack(fill="both", expand=True, padx=30, pady=30)
         
         # Title
-    CTkLabel(
+        CTkLabel(
             form_frame, 
             text="Add New Student", 
             font=("Arial", 20, "bold"), 
@@ -482,7 +482,7 @@ def render_user_page():
         form_frame = CTkFrame(content_frame, fg_color="transparent")
         form_frame.pack(fill="both", expand=True, padx=30, pady=30)
         
-    CTkLabel(
+        CTkLabel(
             form_frame, 
             text="Add New Faculty Member", 
             font=("Arial", 20, "bold"), 
@@ -710,7 +710,7 @@ def render_user_page():
         if not name:
             messagebox.showerror("Error", "Please enter student name")
             return
-        
+
         try:
             import db
             with db.connect() as conn:
@@ -719,22 +719,30 @@ def render_user_page():
                     block_parts = block_info.split(" - Section ")
                     year = int(block_parts[0].replace("Year ", ""))
                     section = block_parts[1]
-                    
-                    cursor = conn.execute("SELECT id FROM blocks WHERE year_level = ? AND section = ?", (year, section))
+
+                    cursor = conn.execute(
+                        "SELECT id FROM blocks WHERE year_level = ? AND section = ?",
+                        (year, section)
+                    )
                     block_id = cursor.fetchone()
-                    
+
                     if block_id:
-                        conn.execute("INSERT INTO students (name, block_id) VALUES (?, ?)", (name, block_id[0]))
+                        conn.execute(
+                            "INSERT INTO students (name, block_id) VALUES (?, ?)",
+                            (name, block_id[0])
+                        )
                         conn.commit()
                         show_success_message(f"Student '{name}' added successfully!")
-        else:
+                    else:
                         messagebox.showerror("Error", "Selected block not found")
                 else:
+                    # No block info provided, insert student without block_id
                     conn.execute("INSERT INTO students (name) VALUES (?)", (name,))
                     conn.commit()
                     show_success_message(f"Student '{name}' added successfully!")
         except Exception as e:
             messagebox.showerror("Database Error", f"Failed to add student: {str(e)}")
+
     
     def add_faculty(name, dept_name, rank):
         if not name:
@@ -1014,7 +1022,7 @@ def render_user_page():
         form_frame = CTkFrame(content_frame, fg_color="transparent")
         form_frame.pack(fill="both", expand=True, padx=30, pady=30)
         
-    CTkLabel(
+        CTkLabel(
             form_frame, 
             text="Add New Enrollment", 
             font=("Arial", 20, "bold"), 
@@ -1218,30 +1226,30 @@ def show_database_page():
         header_frame = CTkFrame(content_frame, fg_color="transparent")
         header_frame.pack(fill="x", padx=20, pady=20)
     
-    CTkLabel(
+        CTkLabel(
             header_frame, 
             text=f"{table_name} Table", 
             font=("Arial", 20, "bold"), 
             text_color="#691612"
-    ).pack(side="left")
-    
+        ).pack(side="left")
+        
         # Search frame
         search_frame = CTkFrame(header_frame, fg_color="transparent")
-    search_frame.pack(side="right")
+        search_frame.pack(side="right")
     
-    CTkLabel(
-        search_frame, 
-        text="Search:", 
+        CTkLabel(
+            search_frame, 
+            text="Search:", 
             font=("Arial", 14), 
             text_color="#333333"
         ).pack(side="left", padx=(0, 10))
-    
-    search_entry = CTkEntry(
-        search_frame, 
+        
+        search_entry = CTkEntry(
+            search_frame, 
             fg_color="#F8F9FA", 
             border_color="#E9ECEF",
-        text_color="#333333",
-        corner_radius=5,
+            text_color="#333333",
+            corner_radius=5,
             width=200,
             height=32
         )
@@ -1283,34 +1291,34 @@ def show_database_page():
     
     def show_students_table(container, search_entry):
         # Create Treeview
-    style = ttk.Style()
-    style.configure(
-        "Treeview",
-        background="#FFFFFF",
-        foreground="#333333",
+        style = ttk.Style()
+        style.configure(
+            "Treeview",
+            background="#FFFFFF",
+            foreground="#333333",
             rowheight=30,
-        fieldbackground="#FFFFFF"
-    )
-    style.configure(
-        "Treeview.Heading",
+            fieldbackground="#FFFFFF"
+        )
+        style.configure(
+            "Treeview.Heading",
             background="#F8F9FA",
-        foreground="#691612",
+            foreground="#691612",
             font=("Arial", 12, "bold")
-    )
-    style.map("Treeview", background=[("selected", "#BF3131")], foreground=[("selected", "#FFFFFF")])
+        )
+        style.map("Treeview", background=[("selected", "#BF3131")], foreground=[("selected", "#FFFFFF")])
     
         # Scrollbar
         tree_scroll = CTkScrollbar(container, orientation="vertical")
-    tree_scroll.pack(side="right", fill="y")
+        tree_scroll.pack(side="right", fill="y")
     
         # Treeview
         tree = ttk.Treeview(
             container,
             columns=("ID", "Name", "Block"),
-        show="headings",
-        style="Treeview",
-        yscrollcommand=tree_scroll.set
-    )
+            show="headings",
+            style="Treeview",
+            yscrollcommand=tree_scroll.set
+        )
         tree_scroll.configure(command=tree.yview)
         tree.pack(fill="both", expand=True)
         
