@@ -44,6 +44,10 @@ def process_sections(img):
     for sec_name, sec_img in sections.items():
         # Detect horizontal lines to get row boundaries.
         output_h, y_coords = utils.detect_horizontal_lines(sec_img, section_name=sec_name)
+        
+        # Display horizontal lines detection
+        cv2.imshow(f"{sec_name} - Horizontal Lines", output_h)
+        cv2.waitKey(100)  # Small delay to see the progression
 
         # Compute row ranges based on filtered y-coordinates.
         rows = []
@@ -53,6 +57,10 @@ def process_sections(img):
 
         # Detect vertical lines to get column boundaries.
         output_v, x_coords = utils.detect_vertical_lines(sec_img, section_name=sec_name)
+        
+        # Display vertical lines detection
+        cv2.imshow(f"{sec_name} - Vertical Lines", output_v)
+        cv2.waitKey(100)  # Small delay to see the progression
 
         # Compute column ranges from filtered x-coordinates.
         columns = []
@@ -61,15 +69,18 @@ def process_sections(img):
             columns.append(col_range)
 
         # Detect circles in the section.
-        output_c, circles = utils.detect_circles(sec_img, section_name=sec_name)
+        output_c, circles = utils.detect_shaded_areas_connected(sec_img, section_name=sec_name)
 
         # Draw circles on the image (highlighting detected circles)
-        for (x, y, r) in circles:
-            cv2.circle(sec_img, (x, y), r, (0, 255, 0), 2)  # Draw green circle with radius 2
+        for (x, y, area) in circles:
+            cv2.circle(sec_img, (x, y), 10, (0, 255, 0), 2)  # Draw green circle with radius 10
+
+        # Store the modified section image
+        modified_images[sec_name] = sec_img.copy()
 
         # For each detected circle, determine which column and row it falls into.
         circle_assignments = []
-        for (x, y, r) in circles:
+        for (x, y, area) in circles:
             col_assigned = None
             row_assigned = None
 
@@ -86,32 +97,53 @@ def process_sections(img):
                     break
 
             if col_assigned is not None and row_assigned is not None:
-                circle_assignments.append((row_assigned, col_assigned, x, y, r))
+                circle_assignments.append((row_assigned, col_assigned, x, y, area))
             else:
-                print(f"{sec_name} - Circle at ({x}, {y}) did not fall within a proper cell range.")
+                print(f"{sec_name} - Shaded area at ({x}, {y}) did not fall within a proper cell range.")
 
         # Sort assignments by row then by column.
         circle_assignments.sort(key=lambda item: (item[0], item[1]))
 
         # Filter out duplicate circles in the same cell (only one per cell).
         unique_cells = {}
-        for (row, col, x, y, r) in circle_assignments:
+        for (row, col, x, y, area) in circle_assignments:
             cell_key = (row, col)
             if cell_key not in unique_cells:
-                unique_cells[cell_key] = (x, y, r)
+                unique_cells[cell_key] = (x, y, area)
 
         # Compute total score for the section.
         total_columns = len(columns)  # e.g., if there are 6 vertical lines then there are 5 columns.
         section_total_score = 0
 
         row_scores = {}
-        for (row, col), (x, y, r) in sorted(unique_cells.items(), key=lambda item: (item[0][0], item[0][1])):
+        for (row, col), (x, y, area) in sorted(unique_cells.items(), key=lambda item: (item[0][0], item[0][1])):
             score = (total_columns + 1) - col
             row_scores[row] = score
+            
+            # Draw score with background for better visibility
+            text = f"Score: {score}"
+            text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
+            
+            # Draw background rectangle
+            cv2.rectangle(sec_img, (x+15, y-15), (x+15+text_size[0]+10, y+15), (255, 255, 255), -1)
+            cv2.rectangle(sec_img, (x+15, y-15), (x+15+text_size[0]+10, y+15), (0, 0, 0), 2)
+            
+            # Draw score text
+            cv2.putText(sec_img, text, (x+20, y+5), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
 
         all_section_scores[sec_name] = row_scores
+        
+        # Print section summary
+        print(f"\n{sec_name} Scores:")
+        for row, score in sorted(row_scores.items()):
+            print(f"  Row {row}: Score {score}")
 
-       
+    # Display all modified sections with highlighted circles
+    for sec_name, sec_img in modified_images.items():
+        cv2.imshow(f"{sec_name} - Processed", sec_img)
+    
+    cv2.waitKey(0)  # Wait for key press
+    cv2.destroyAllWindows()  # Close all windows
 
     return all_section_scores
 
