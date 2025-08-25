@@ -45,9 +45,7 @@ def process_sections(img):
         # Detect horizontal lines to get row boundaries.
         output_h, y_coords = utils.detect_horizontal_lines(sec_img, section_name=sec_name)
         
-        # Display horizontal lines detection
-        cv2.imshow(f"{sec_name} - Horizontal Lines", output_h)
-        cv2.waitKey(100)  # Small delay to see the progression
+        
 
         # Compute row ranges based on filtered y-coordinates.
         rows = []
@@ -58,9 +56,7 @@ def process_sections(img):
         # Detect vertical lines to get column boundaries.
         output_v, x_coords = utils.detect_vertical_lines(sec_img, section_name=sec_name)
         
-        # Display vertical lines detection
-        cv2.imshow(f"{sec_name} - Vertical Lines", output_v)
-        cv2.waitKey(100)  # Small delay to see the progression
+        
 
         # Compute column ranges from filtered x-coordinates.
         columns = []
@@ -139,8 +135,7 @@ def process_sections(img):
             print(f"  Row {row}: Score {score}")
 
     # Display all modified sections with highlighted circles
-    for sec_name, sec_img in modified_images.items():
-        cv2.imshow(f"{sec_name} - Processed", sec_img)
+    
     
     cv2.waitKey(0)  # Wait for key press
     cv2.destroyAllWindows()  # Close all windows
