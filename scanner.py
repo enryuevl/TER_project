@@ -17,15 +17,18 @@ class WIAScanner:
     WIA_DPS_DOCUMENT_HANDLING_STATUS = 3087
     WIA_DPS_PAGES = 3096
     
-    def __init__(self, output_dir=None):
-        """Initialize the scanner with optional output directory"""
-        if output_dir is None:
-            # Default to Documents/MyWork/Scanned if no output dir specified
-            documents_folder = os.path.join(os.path.expanduser("~"), "Documents")
-            work_folder = os.path.join(documents_folder, "MyWork")
+    def __init__(self, teacher_name=None, output_dir=None):
+        documents_folder = os.path.join(os.path.expanduser("~"), "Documents")
+        work_folder = os.path.join(documents_folder, "MyWork")
+
+        # ✅ Save under Scan/<teacher>
+        if teacher_name:
+            output_dir = os.path.join(work_folder, "Scan", teacher_name)
+        else:
             output_dir = os.path.join(work_folder, "Scanned")
-        
+
         self.output_dir = output_dir
+        os.makedirs(self.output_dir, exist_ok=True)
         self.counter_file = os.path.join(output_dir, "counter.txt")
         self.device = None
         self.connection = None

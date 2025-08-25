@@ -6,6 +6,7 @@ import pandas as pd
 import cv2, numpy as np, os, threading
 from scanner import WIAScanner
 import db
+import pythoncom
 
 
 class ScanPage:
@@ -260,11 +261,15 @@ class ScanPage:
     def start_scan(self):
         def worker():
             try:
+                # Initialize COM for this thread
+                pythoncom.CoInitialize()
+
                 teacher = self.teacher_var.get()
-                scanner = WIAScanner()
+                scanner = WIAScanner(teacher_name=teacher) 
                 info = scanner.initialize()
                 self.status_label.configure(text=f"Scanner detected: {info['name']}")
                 pages = scanner.scan_batch()
+
                 if pages > 0:
                     results = self.process_work_folder(teacher)
                     self.processed_results.update(results)
@@ -272,8 +277,13 @@ class ScanPage:
                     self.status_label.configure(text="Processing complete!")
                 else:
                     self.status_label.configure(text="No documents found.")
+
             except Exception as e:
                 messagebox.showerror("Scan Error", str(e))
+
+            finally:
+                # Always uninitialize COM when done
+                pythoncom.CoUninitialize()
 
         threading.Thread(target=worker, daemon=True).start()
 
