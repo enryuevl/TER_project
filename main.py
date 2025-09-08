@@ -15,6 +15,7 @@ import datetime
 import os
 from accounts_page import acc_page
 from scan_page import ScanPage
+from results_page import ResultsPage
 
 
 # Initialize database (creates Documents/MyWork/ter_db.sqlite on first run)
@@ -1069,156 +1070,12 @@ def show_database_page():
 
 
 
-def render_result_page(main_frame, processed_results):
-    for widget in main_frame.winfo_children():
-        widget.destroy()
-
-    if not processed_results:
-        CTkLabel(
-            main_frame,
-            text="No results available. Please scan or process documents first.",
-            font=('Montserrat', 16),
-            text_color="black"
-        ).pack(pady=20)
-        return
-
-    content_frame = CTkFrame(master=main_frame, fg_color="#F8F9FA")
-    content_frame.pack(fill="both", expand=True, padx=20, pady=10)  # Reduced pady from 20 to 10
-    
-    tabs_frame = CTkFrame(content_frame, fg_color="#FFFFFF", corner_radius=10)
-    tabs_frame.pack(fill="x", pady=(0, 5))  # Reduced pady from 10 to 5
-    
-    tab_buttons_container = CTkFrame(tabs_frame, fg_color="transparent")
-    tab_buttons_container.pack(fill="x", padx=10, pady=5)
-    
-    sheet_container = CTkFrame(content_frame, fg_color="#FFFFFF", corner_radius=10)
-    sheet_container.pack(fill="both", expand=False)  # Changed expand=True to expand=False
-    
-    tab_buttons = []
-    
-    def show_teacher_results(teacher_name):
-        for widget in sheet_container.winfo_children():
-            widget.destroy()
-        
-        for btn in tab_buttons:
-            if btn.cget("text") == teacher_name:
-                btn.configure(fg_color="#691612", text_color="#FFFFFF")
-            else:
-                btn.configure(fg_color="transparent", text_color="#475569")
-        
-        teacher_data = processed_results.get(teacher_name, [])
-        if not teacher_data:
-            CTkLabel(
-                sheet_container,
-                text=f"No results available for {teacher_name}",
-                font=('Montserrat', 14),
-                text_color="#64748B"
-            ).pack(pady=20)
-            return
-        
-        headers = ["Section/Row"]
-        for idx, (filename, _) in enumerate(teacher_data):
-            headers.append(f"Doc {idx + 1}")
-        
-        sheet_data = [headers]
-        
-        all_rows = {}
-        for _, results in teacher_data:
-            for section, rows in results.items():
-                for row_num in range(1, 6):
-                    row_key = f"{section} Row {row_num}"
-                    if row_key not in all_rows:
-                        all_rows[row_key] = []
-        
-        for row_key in sorted(all_rows.keys()):
-            row_data = [row_key]
-            for _, results in teacher_data:
-                section = row_key.split(" Row ")[0]
-                row_num = int(row_key.split(" Row ")[1])
-                score = results.get(section, {}).get(row_num, "")
-                row_data.append(score)
-            sheet_data.append(row_data)
-        
-        total_row = ["Total"]
-        for _, results in teacher_data:
-            total = sum(sum(rows.values()) for rows in results.values())
-            total_row.append(total)
-        sheet_data.append(total_row)
-        
-        table = Sheet(
-            sheet_container,
-            data=sheet_data[1:],
-            headers=sheet_data[0],
-            width=800,
-            height=400  # Reduced height from 600 to 400
-        )
-        
-        table.enable_bindings((
-            "single_select", "row_select", "column_width_resize",
-            "arrowkeys", "right_click_popup_menu", "rc_select", "copy"
-        ))
-        
-        table.header_font(("Montserrat", 12, "bold"))
-        table.font(("Montserrat", 12, "normal"))
-        
-        export_frame = CTkFrame(sheet_container, fg_color="transparent")
-        export_frame.pack(fill="x", pady=5, padx=10)  # Reduced pady from 10 to 5
-        
-        def export_teacher_results():
-            file_path = filedialog.asksaveasfilename(
-                defaultextension=".csv",
-                filetypes=[("CSV Files", "*.csv"), ("Excel Files", "*.xlsx")],
-                initialfile=f"{teacher_name}_results"
-            )
-            if file_path:
-                try:
-                    if file_path.endswith('.csv'):
-                        pd.DataFrame(sheet_data[1:], columns=sheet_data[0]).to_csv(file_path, index=False)
-                    else:
-                        pd.DataFrame(sheet_data[1:], columns=sheet_data[0]).to_excel(file_path, index=False)
-                    messagebox.showinfo("Export Successful", f"Results exported to {os.path.basename(file_path)}")
-                except Exception as e:
-                    messagebox.showerror("Export Error", f"Failed to export results: {str(e)}")
-        
-        CTkButton(
-            export_frame,
-            text="Export Results",
-            command=export_teacher_results,
-            fg_color="#691612",
-            hover_color="#550d0a",
-            text_color="#FFFFFF",
-            font=("Arial", 14),
-            width=150,
-            height=35,
-            corner_radius=8
-        ).pack(side="right", padx=10)
-        
-        table.pack(fill="both", expand=True, padx=10, pady=(0, 5))  # Reduced pady from 10 to 5
-    
-    for i, teacher in enumerate(processed_results.keys()):
-        btn = CTkButton(
-            tab_buttons_container,
-            text=teacher,
-            command=lambda name=teacher: show_teacher_results(name),
-            fg_color="transparent" if i > 0 else "#691612",
-            text_color="#475569" if i > 0 else "#FFFFFF",
-            hover_color="#F1F5F9",
-            width=150,
-            height=35,
-            corner_radius=8
-        )
-        btn.pack(side="left", padx=5)
-        tab_buttons.append(btn)
-    
-    if processed_results:
-        first_teacher = next(iter(processed_results.keys()))
-        show_teacher_results(first_teacher)
 # Navigation sidebar buttons
 nav_actions = {
     "Dashboard": render_home_page,
     "Scan": lambda: ScanPage(main_frame, processed_results),
     "Print": lambda: print("Print clicked"),
-    "Results": lambda: render_result_page(main_frame, processed_results),
+    "Results": lambda: ResultsPage(main_frame, processed_results),
     "Accounts": lambda: acc_page(main_frame), 
     "Database": show_database_page
 }
