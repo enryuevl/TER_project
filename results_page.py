@@ -61,6 +61,7 @@ class ResultsPage:
 
     # ---------------- Logic ---------------- #
     def show_teacher_results(self, teacher_name):
+        # Clear previous content in sheet_container
         for widget in self.sheet_container.winfo_children():
             widget.destroy()
 
@@ -82,6 +83,75 @@ class ResultsPage:
             ).pack(pady=20)
             return
 
+        # Header frame for title, search, and export (like database viewer)
+        header_frame = CTkFrame(self.sheet_container, fg_color="transparent")
+        header_frame.pack(fill="x", padx=20, pady=(10, 15))
+
+        CTkLabel(
+            header_frame,
+            text=f"{teacher_name}'s Evaluation Results",
+            font=("Arial", 20, "bold"),
+            text_color="#691612"  # Theme primary
+        ).pack(side="left")
+
+        # Search frame
+        search_frame = CTkFrame(header_frame, fg_color="transparent")
+        search_frame.pack(side="right")
+
+        CTkLabel(
+            search_frame,
+            text="Search:",
+            font=("Arial", 14),
+            text_color="#333333"
+        ).pack(side="left", padx=(0, 10))
+
+        search_entry = CTkEntry(
+            search_frame,
+            fg_color="#F8F9FA",  # Theme light bg
+            border_color="#E9ECEF",
+            text_color="#333333",
+            corner_radius=5,
+            width=200,
+            height=32,
+            placeholder_text="Search sections or scores..."
+        )
+        search_entry.pack(side="left", padx=(0, 10))
+
+        # Export button
+        def export_table():
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV Files", "*.csv"), ("Excel Files", "*.xlsx")],
+                initialfile=f"{teacher_name}_evaluation_results"
+            )
+            if file_path:
+                df = pd.DataFrame(sheet_data)
+                try:
+                    if file_path.endswith('.csv'):
+                        df.to_csv(file_path, index=False)
+                    else:
+                        df.to_excel(file_path, index=False)
+                    messagebox.showinfo("Export Successful", f"Data exported to {file_path}")
+                except Exception as e:
+                    messagebox.showerror("Export Error", f"Failed to export data: {str(e)}")
+
+        export_btn = CTkButton(
+            search_frame,
+            text="Export CSV",
+            command=export_table,
+            fg_color="#691612",  # Theme primary
+            hover_color="#AC5353",  # Theme secondary
+            text_color="#FFFFFF",
+            font=("Arial", 12, "bold"),
+            height=32,
+            corner_radius=6
+        )
+        export_btn.pack(side="left")
+
+        # Table container 
+        table_container = CTkFrame(self.sheet_container, fg_color="#FFFFFF", corner_radius=10)
+        table_container.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
         # Build table headers
         headers = ["Section/Row"]
         for idx, (filename, _) in enumerate(teacher_data):
@@ -93,7 +163,7 @@ class ResultsPage:
         all_rows = {}
         for _, results in teacher_data:
             for section, rows in results.items():
-                for row_num in rows.keys():   # dynamically detect rows
+                for row_num in rows.keys():  # Dynamically detect rows
                     row_key = f"{section} Row {row_num}"
                     if row_key not in all_rows:
                         all_rows[row_key] = []
@@ -108,61 +178,80 @@ class ResultsPage:
                 row_data.append(score if score != "" else 0)
             sheet_data.append(row_data)
 
-        # Add totals
+        # Add totals row
         total_row = ["Total"]
         for _, results in teacher_data:
             total = sum(sum(rows.values()) for rows in results.values())
             total_row.append(total)
         sheet_data.append(total_row)
 
-        # Display table
-        table = Sheet(
-            self.sheet_container,
-            data=sheet_data[1:],   # skip header row
+        # Create styled Sheet
+        sheet = Sheet(
+            table_container,  # Parent is the new CTkFrame
+            data=sheet_data[1:],  # Skip header for data
             headers=sheet_data[0],
             width=800,
-            height=400
+            height=400,
+            # Theme-based colors
+            header_bg="#F8F9FA",  # Light bg like Treeview headings
+            header_fg="#691612",  # Primary text color
+            table_bg="#FFFFFF",   # White cells
+            table_fg="#333333",   # Body text
+            selected_row_bg="#BF3131",  # Selection bg like Treeview
+            selected_row_fg="#FFFFFF",  # Selection text
+            grid_color="#E9ECEF",  # Subtle gridlines
+            align="w",  # Left align by default
+            show_row_index=False,  # Hide row index
+            font=("Arial", 12),  # Theme body font
+            header_font=("Arial", 12, "bold"),  # Theme header font
+            row_height=30,  # Match Treeview row height
+            alternating_colors=("#F8F9FA", "#FFFFFF")  # Subtle alternating like cards
         )
 
-        table.enable_bindings((
+        # Enable bindings (interactivity)
+        sheet.enable_bindings((
             "single_select", "row_select", "column_width_resize",
-            "arrowkeys", "right_click_popup_menu", "rc_select", "copy"
+            "arrowkeys", "right_click_popup_menu", "rc_select", "copy",
+            "edit_cell", "undo"  # Support editing
         ))
 
-        table.header_font(("Montserrat", 12, "bold"))
-        table.font(("Montserrat", 12, "normal"))
+        # Right-align numerical columns (Docs and Total)
+        for col in range(1, len(headers)):
+            sheet.align_columns(columns=[col], align="e")  # Right align
 
-        # Export button
-        export_frame = CTkFrame(self.sheet_container, fg_color="transparent")
-        export_frame.pack(fill="x", pady=5, padx=10)
+        # Style totals row (last row)
+        sheet.highlight_rows(rows=[len(sheet_data) - 2], bg="#F8F9FA", fg="#691612")  # Light bg, bold text
 
-        CTkButton(
-            export_frame,
-            text="Export Results",
-            command=lambda: self.export_teacher_results(sheet_data, teacher_name),
-            fg_color="#691612",
-            hover_color="#550d0a",
-            text_color="#FFFFFF",
-            font=("Arial", 14),
-            width=150,
-            height=35,
-            corner_radius=8
-        ).pack(side="right", padx=10)
+        # Conditional formatting (scoring)
+        def apply_conditional():
+            for row_idx in range(len(sheet_data) - 1):  # Exclude total
+                for col_idx in range(1, len(headers)):  # Skip section column
+                    value = sheet_data[row_idx + 1][col_idx]  # +1 for data offset
+                    if isinstance(value, (int, float)):
+                        if value < 50:
+                            sheet.highlight_cells(row=row_idx, column=col_idx, bg="#EF4444", fg="#FFFFFF")  # Red for low
+                        elif value > 90:
+                            sheet.highlight_cells(row=row_idx, column=col_idx, bg="#22C55E", fg="#FFFFFF")  # Green for high
 
-        table.pack(fill="both", expand=True, padx=10, pady=(0, 5))
+        apply_conditional()
+        sheet.redraw()  # Refresh after styling
 
-    def export_teacher_results(self, sheet_data, teacher_name):
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".csv",
-            filetypes=[("CSV Files", "*.csv"), ("Excel Files", "*.xlsx")],
-            initialfile=f"{teacher_name}_results"
-        )
-        if file_path:
-            try:
-                if file_path.endswith('.csv'):
-                    pd.DataFrame(sheet_data[1:], columns=sheet_data[0]).to_csv(file_path, index=False)
-                else:
-                    pd.DataFrame(sheet_data[1:], columns=sheet_data[0]).to_excel(file_path, index=False)
-                messagebox.showinfo("Export Successful", f"Results exported to {os.path.basename(file_path)}")
-            except Exception as e:
-                messagebox.showerror("Export Error", f"Failed to export results: {str(e)}")
+        # Search functionality
+        def search_table(event):
+            search_term = search_entry.get().lower()
+            if not search_term:
+                sheet.set_sheet_data(sheet_data[1:])  # Reset to full data
+                apply_conditional()
+                sheet.redraw()
+                return
+            filtered_data = [row for row in sheet_data[1:] if search_term in str(row[0]).lower()]
+            sheet.set_sheet_data(filtered_data)
+            apply_conditional()
+            sheet.redraw()
+
+        search_entry.bind("<KeyRelease>", search_table)
+
+        # Pack the sheet
+        sheet.pack(expand=True, fill="both", padx=10, pady=10)
+
+        return sheet
