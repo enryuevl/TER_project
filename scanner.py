@@ -1,3 +1,4 @@
+# python -m venv .venv (create virtual environment)
 #.\env\Scripts\Activate.ps1 (to activate the virtual environment)
 
 from win32com.client import Dispatch
@@ -17,25 +18,27 @@ class WIAScanner:
     WIA_DPS_DOCUMENT_HANDLING_STATUS = 3087
     WIA_DPS_PAGES = 3096
     
+   
     def __init__(self, teacher_name=None, output_dir=None):
-        documents_folder = os.path.join(os.path.expanduser("~"), "Documents")
-        work_folder = os.path.join(documents_folder, "MyWork")
+        documents_folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Scan")
 
-        # ✅ Save under Scan/<teacher>
+        # If teacher is given, use teacher folder
         if teacher_name:
-            output_dir = os.path.join(work_folder, "Scan", teacher_name)
-        else:
-            output_dir = os.path.join(work_folder, "Scanned")
+            output_dir = os.path.join(documents_folder, teacher_name)
+
+        # If still None, default to Scan root
+        if output_dir is None:
+            output_dir = documents_folder
 
         self.output_dir = output_dir
+        self.counter_file = os.path.join(self.output_dir, "counter.txt")
+
         os.makedirs(self.output_dir, exist_ok=True)
-        self.counter_file = os.path.join(output_dir, "counter.txt")
+
         self.device = None
         self.connection = None
         self.status_prop = None
-        
-        # Create output directory if it doesn't exist
-        os.makedirs(self.output_dir, exist_ok=True)
+
         
     def initialize(self):
         """Initialize WIA and connect to the first available scanner"""
@@ -146,7 +149,7 @@ class DocumentCounter:
         with open(self.counter_file, "w") as f:
             f.write(str(self.current_count))
 
-# Example usage (only runs if this file is run directly)
+# (only runs if this file is run directly)
 if __name__ == "__main__":
     try:
         # Create scanner instance
