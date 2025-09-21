@@ -342,9 +342,9 @@ def show_database_page():
     tab_frame = CTkFrame(container, fg_color="transparent")
     tab_frame.pack(fill="x", pady=(0, 20))
     
-    # Tab buttons
+    # Tab buttons (only 2 now)
     tab_buttons = {}
-    entities = ["Students", "Faculty", "Departments", "Subjects", "Blocks", "Enrollments", "Teaching Assignments"]
+    entities = ["Faculty", "Departments"]
     
     for i, entity in enumerate(entities):
         btn = CTkButton(
@@ -354,7 +354,7 @@ def show_database_page():
             fg_color="#AC5353" if i == 0 else "#F1F3F5",
             text_color="#FFFFFF" if i == 0 else "#333333",
             hover_color="#BF3131" if i == 0 else "#E9ECEF",
-            width=140,
+            width=160,
             height=35,
             corner_radius=8
         )
@@ -373,11 +373,11 @@ def show_database_page():
             else:
                 btn.configure(fg_color="#F1F3F5", text_color="#333333")
         
-        # Clear content and show new table
+        # Clear content
         for widget in content_frame.winfo_children():
             widget.destroy()
         
-        # Header with search and export
+        # Header with search + export
         header_frame = CTkFrame(content_frame, fg_color="transparent")
         header_frame.pack(fill="x", padx=20, pady=20)
     
@@ -388,29 +388,15 @@ def show_database_page():
             text_color="#691612"
         ).pack(side="left")
         
-        # Search frame
         search_frame = CTkFrame(header_frame, fg_color="transparent")
         search_frame.pack(side="right")
     
-        CTkLabel(
-            search_frame, 
-            text="Search:", 
-            font=("Arial", 14), 
-            text_color="#333333"
-        ).pack(side="left", padx=(0, 10))
+        CTkLabel(search_frame, text="Search:", font=("Arial", 14), text_color="#333333").pack(side="left", padx=(0, 10))
         
-        search_entry = CTkEntry(
-            search_frame, 
-            fg_color="#F8F9FA", 
-            border_color="#E9ECEF",
-            text_color="#333333",
-            corner_radius=5,
-            width=200,
-            height=32
-        )
+        search_entry = CTkEntry(search_frame, fg_color="#F8F9FA", border_color="#E9ECEF",
+                                text_color="#333333", corner_radius=5, width=200, height=32)
         search_entry.pack(side="left", padx=(0, 10))
         
-        # Export button
         export_btn = CTkButton(
             search_frame,
             text="Export CSV",
@@ -428,112 +414,12 @@ def show_database_page():
         table_container = CTkFrame(content_frame, fg_color="transparent")
         table_container.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         
-        # Create table based on table name
-        if table_name == "Students":
-            show_students_table(table_container, search_entry)
-        elif table_name == "Faculty":
+        if table_name == "Faculty":
             show_faculty_table(table_container, search_entry)
         elif table_name == "Departments":
             show_departments_table(table_container, search_entry)
-        elif table_name == "Subjects":
-            show_subjects_table(table_container, search_entry)
-        elif table_name == "Blocks":
-            show_blocks_table(table_container, search_entry)
-        elif table_name == "Enrollments":
-            show_enrollments_table(table_container, search_entry)
-        elif table_name == "Teaching Assignments":
-            show_teaching_assignments_table(table_container, search_entry)
     
-    def show_students_table(container, search_entry):
-        # Create Treeview
-        style = ttk.Style()
-        style.configure(
-            "Treeview",
-            background="#FFFFFF",
-            foreground="#333333",
-            rowheight=30,
-            fieldbackground="#FFFFFF"
-        )
-        style.configure(
-            "Treeview.Heading",
-            background="#F8F9FA",
-            foreground="#691612",
-            font=("Arial", 12, "bold")
-        )
-        style.map("Treeview", background=[("selected", "#BF3131")], foreground=[("selected", "#FFFFFF")])
-    
-        # Scrollbar
-        tree_scroll = CTkScrollbar(container, orientation="vertical")
-        tree_scroll.pack(side="right", fill="y")
-    
-        # Treeview
-        tree = ttk.Treeview(
-            container,
-            columns=("ID", "Name", "Block"),
-            show="headings",
-            style="Treeview",
-            yscrollcommand=tree_scroll.set
-        )
-        tree_scroll.configure(command=tree.yview)
-        tree.pack(fill="both", expand=True)
-        
-        # Headings
-        tree.heading("ID", text="ID")
-        tree.heading("Name", text="Student Name")
-        tree.heading("Block", text="Block")
-        
-        # Columns
-        tree.column("ID", width=80, anchor="center")
-        tree.column("Name", width=300, anchor="w")
-        tree.column("Block", width=200, anchor="center")
-        
-        # Load data
-        def load_students_data():
-            tree.delete(*tree.get_children())
-            try:
-                import db
-                with db.connect() as conn:
-                    cursor = conn.execute("""
-                        SELECT s.id, s.name, 
-                               CASE 
-                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
-                                   ELSE 'No Block Assigned'
-                               END as block_info
-                        FROM students s
-                        LEFT JOIN blocks b ON s.block_id = b.id
-                        ORDER BY s.name
-                    """)
-                    for row in cursor.fetchall():
-                        tree.insert("", "end", values=row)
-            except Exception as e:
-                messagebox.showerror("Database Error", f"Failed to load students: {str(e)}")
-        
-        # Search functionality
-        def search_students(event):
-            search_term = search_entry.get().lower()
-            tree.delete(*tree.get_children())
-            try:
-                import db
-                with db.connect() as conn:
-                    cursor = conn.execute("""
-                        SELECT s.id, s.name, 
-                               CASE 
-                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
-                                   ELSE 'No Block Assigned'
-                               END as block_info
-                        FROM students s
-                        LEFT JOIN blocks b ON s.block_id = b.id
-                        WHERE s.name LIKE ? OR b.section LIKE ?
-                        ORDER BY s.name
-                    """, (f"%{search_term}%", f"%{search_term}%"))
-                    for row in cursor.fetchall():
-                        tree.insert("", "end", values=row)
-            except Exception as e:
-                messagebox.showerror("Database Error", f"Failed to search students: {str(e)}")
-        
-        search_entry.bind("<KeyRelease>", search_students)
-        load_students_data()
-    
+    # ---------------- Faculty Table ---------------- #
     def show_faculty_table(container, search_entry):
         style = ttk.Style()
         style.configure("Treeview", background="#FFFFFF", foreground="#333333", rowheight=30, fieldbackground="#FFFFFF")
@@ -545,7 +431,7 @@ def show_database_page():
         
         tree = ttk.Treeview(
             container,
-            columns=("ID", "Name", "Department", "Rank"),
+            columns=("ID", "Name", "Department", "Rank", "Subrank"),
             show="headings",
             style="Treeview",
             yscrollcommand=tree_scroll.set
@@ -557,11 +443,13 @@ def show_database_page():
         tree.heading("Name", text="Faculty Name")
         tree.heading("Department", text="Department")
         tree.heading("Rank", text="Rank")
+        tree.heading("Subrank", text="Subrank")
         
         tree.column("ID", width=80, anchor="center")
         tree.column("Name", width=250, anchor="w")
         tree.column("Department", width=200, anchor="w")
         tree.column("Rank", width=150, anchor="center")
+        tree.column("Subrank", width=120, anchor="center")
         
         def load_faculty_data():
             tree.delete(*tree.get_children())
@@ -571,7 +459,7 @@ def show_database_page():
                     cursor = conn.execute("""
                         SELECT f.id, f.name, 
                                COALESCE(d.name, 'No Department') as dept_name,
-                               f.rank
+                               f.rank, f.subrank
                         FROM faculty f
                         LEFT JOIN departments d ON f.department_id = d.id
                         ORDER BY f.name
@@ -590,12 +478,12 @@ def show_database_page():
                     cursor = conn.execute("""
                         SELECT f.id, f.name, 
                                COALESCE(d.name, 'No Department') as dept_name,
-                               f.rank
+                               f.rank, f.subrank
                         FROM faculty f
                         LEFT JOIN departments d ON f.department_id = d.id
-                        WHERE f.name LIKE ? OR d.name LIKE ? OR f.rank LIKE ?
+                        WHERE f.name LIKE ? OR d.name LIKE ? OR f.rank LIKE ? OR f.subrank LIKE ?
                         ORDER BY f.name
-                    """, (f"%{search_term}%", f"%{search_term}%", f"%{search_term}%"))
+                    """, (f"%{search_term}%", f"%{search_term}%", f"%{search_term}%", f"%{search_term}%"))
                     for row in cursor.fetchall():
                         tree.insert("", "end", values=row)
             except Exception as e:
@@ -604,6 +492,7 @@ def show_database_page():
         search_entry.bind("<KeyRelease>", search_faculty)
         load_faculty_data()
     
+    # ---------------- Departments Table ---------------- #
     def show_departments_table(container, search_entry):
         style = ttk.Style()
         style.configure("Treeview", background="#FFFFFF", foreground="#333333", rowheight=30, fieldbackground="#FFFFFF")
@@ -637,8 +526,7 @@ def show_database_page():
                 import db
                 with db.connect() as conn:
                     cursor = conn.execute("""
-                        SELECT d.id, d.name, 
-                               COUNT(f.id) as faculty_count
+                        SELECT d.id, d.name, COUNT(f.id) as faculty_count
                         FROM departments d
                         LEFT JOIN faculty f ON d.id = f.department_id
                         GROUP BY d.id, d.name
@@ -656,8 +544,7 @@ def show_database_page():
                 import db
                 with db.connect() as conn:
                     cursor = conn.execute("""
-                        SELECT d.id, d.name, 
-                               COUNT(f.id) as faculty_count
+                        SELECT d.id, d.name, COUNT(f.id) as faculty_count
                         FROM departments d
                         LEFT JOIN faculty f ON d.id = f.department_id
                         WHERE d.name LIKE ?
@@ -672,401 +559,53 @@ def show_database_page():
         search_entry.bind("<KeyRelease>", search_departments)
         load_departments_data()
     
-    def show_subjects_table(container, search_entry):
-        style = ttk.Style()
-        style.configure("Treeview", background="#FFFFFF", foreground="#333333", rowheight=30, fieldbackground="#FFFFFF")
-        style.configure("Treeview.Heading", background="#F8F9FA", foreground="#691612", font=("Arial", 12, "bold"))
-        style.map("Treeview", background=[("selected", "#BF3131")], foreground=[("selected", "#FFFFFF")])
-        
-        tree_scroll = CTkScrollbar(container, orientation="vertical")
-        tree_scroll.pack(side="right", fill="y")
-        
-        tree = ttk.Treeview(
-            container,
-            columns=("ID", "Code", "Name", "Units"),
-            show="headings",
-            style="Treeview",
-            yscrollcommand=tree_scroll.set
-        )
-        tree_scroll.configure(command=tree.yview)
-        tree.pack(fill="both", expand=True)
-        
-        tree.heading("ID", text="ID")
-        tree.heading("Code", text="Subject Code")
-        tree.heading("Name", text="Subject Name")
-        tree.heading("Units", text="Units")
-        
-        tree.column("ID", width=80, anchor="center")
-        tree.column("Code", width=150, anchor="center")
-        tree.column("Name", width=350, anchor="w")
-        tree.column("Units", width=100, anchor="center")
-        
-        def load_subjects_data():
-            tree.delete(*tree.get_children())
-            try:
-                import db
-                with db.connect() as conn:
-                    cursor = conn.execute("SELECT id, code, name, units FROM subjects ORDER BY code")
-                    for row in cursor.fetchall():
-                        tree.insert("", "end", values=row)
-            except Exception as e:
-                messagebox.showerror("Database Error", f"Failed to load subjects: {str(e)}")
-        
-        def search_subjects(event):
-            search_term = search_entry.get().lower()
-            tree.delete(*tree.get_children())
-            try:
-                import db
-                with db.connect() as conn:
-                    cursor = conn.execute("""
-                        SELECT id, code, name, units 
-                        FROM subjects 
-                        WHERE code LIKE ? OR name LIKE ?
-                        ORDER BY code
-                    """, (f"%{search_term}%", f"%{search_term}%"))
-                    for row in cursor.fetchall():
-                        tree.insert("", "end", values=row)
-            except Exception as e:
-                messagebox.showerror("Database Error", f"Failed to search subjects: {str(e)}")
-        
-        search_entry.bind("<KeyRelease>", search_subjects)
-        load_subjects_data()
-    
-    def show_blocks_table(container, search_entry):
-        style = ttk.Style()
-        style.configure("Treeview", background="#FFFFFF", foreground="#333333", rowheight=30, fieldbackground="#FFFFFF")
-        style.configure("Treeview.Heading", background="#F8F9FA", foreground="#691612", font=("Arial", 12, "bold"))
-        style.map("Treeview", background=[("selected", "#BF3131")], foreground=[("selected", "#FFFFFF")])
-        
-        tree_scroll = CTkScrollbar(container, orientation="vertical")
-        tree_scroll.pack(side="right", fill="y")
-        
-        tree = ttk.Treeview(
-            container,
-            columns=("ID", "Year Level", "Section", "Student Count"),
-            show="headings",
-            style="Treeview",
-            yscrollcommand=tree_scroll.set
-        )
-        tree_scroll.configure(command=tree.yview)
-        tree.pack(fill="both", expand=True)
-        
-        tree.heading("ID", text="ID")
-        tree.heading("Year Level", text="Year Level")
-        tree.heading("Section", text="Section")
-        tree.heading("Student Count", text="Students")
-        
-        tree.column("ID", width=80, anchor="center")
-        tree.column("Year Level", width=120, anchor="center")
-        tree.column("Section", width=100, anchor="center")
-        tree.column("Student Count", width=120, anchor="center")
-        
-        def load_blocks_data():
-            tree.delete(*tree.get_children())
-            try:
-                import db
-                with db.connect() as conn:
-                    cursor = conn.execute("""
-                        SELECT b.id, b.year_level, b.section,
-                               COUNT(s.id) as student_count
-                        FROM blocks b
-                        LEFT JOIN students s ON b.id = s.block_id
-                        GROUP BY b.id, b.year_level, b.section
-                        ORDER BY b.year_level, b.section
-                    """)
-                    for row in cursor.fetchall():
-                        tree.insert("", "end", values=row)
-            except Exception as e:
-                messagebox.showerror("Database Error", f"Failed to load blocks: {str(e)}")
-        
-        def search_blocks(event):
-            search_term = search_entry.get().lower()
-            tree.delete(*tree.get_children())
-            try:
-                import db
-                with db.connect() as conn:
-                    cursor = conn.execute("""
-                        SELECT b.id, b.year_level, b.section,
-                               COUNT(s.id) as student_count
-                        FROM blocks b
-                        LEFT JOIN students s ON b.id = s.block_id
-                        WHERE CAST(b.year_level AS TEXT) LIKE ? OR b.section LIKE ?
-                        GROUP BY b.id, b.year_level, b.section
-                        ORDER BY b.year_level, b.section
-                    """, (f"%{search_term}%", f"%{search_term}%"))
-                    for row in cursor.fetchall():
-                        tree.insert("", "end", values=row)
-            except Exception as e:
-                messagebox.showerror("Database Error", f"Failed to search blocks: {str(e)}")
-        
-        search_entry.bind("<KeyRelease>", search_blocks)
-        load_blocks_data()
-    
-    def show_enrollments_table(container, search_entry):
-        style = ttk.Style()
-        style.configure("Treeview", background="#FFFFFF", foreground="#333333", rowheight=30, fieldbackground="#FFFFFF")
-        style.configure("Treeview.Heading", background="#F8F9FA", foreground="#691612", font=("Arial", 12, "bold"))
-        style.map("Treeview", background=[("selected", "#BF3131")], foreground=[("selected", "#FFFFFF")])
-        
-        tree_scroll = CTkScrollbar(container, orientation="vertical")
-        tree_scroll.pack(side="right", fill="y")
-        
-        tree = ttk.Treeview(
-            container,
-            columns=("ID", "Student", "Subject", "Block"),
-            show="headings",
-            style="Treeview",
-            yscrollcommand=tree_scroll.set
-        )
-        tree_scroll.configure(command=tree.yview)
-        tree.pack(fill="both", expand=True)
-        
-        tree.heading("ID", text="ID")
-        tree.heading("Student", text="Student Name")
-        tree.heading("Subject", text="Subject")
-        tree.heading("Block", text="Block")
-        
-        tree.column("ID", width=80, anchor="center")
-        tree.column("Student", width=250, anchor="w")
-        tree.column("Subject", width=250, anchor="w")
-        tree.column("Block", width=200, anchor="center")
-        
-        def load_enrollments_data():
-            tree.delete(*tree.get_children())
-            try:
-                import db
-                with db.connect() as conn:
-                    cursor = conn.execute("""
-                        SELECT e.id, s.name as student_name,
-                               sub.name as subject_name,
-                               CASE 
-                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
-                                   ELSE 'No Block'
-                               END as block_info
-                        FROM enrollments e
-                        LEFT JOIN students s ON e.student_id = s.id
-                        LEFT JOIN subjects sub ON e.subject_id = sub.id
-                        LEFT JOIN blocks b ON e.block_id = b.id
-                        ORDER BY s.name
-                    """)
-                    for row in cursor.fetchall():
-                        tree.insert("", "end", values=row)
-            except Exception as e:
-                messagebox.showerror("Database Error", f"Failed to load enrollments: {str(e)}")
-        
-        def search_enrollments(event):
-            search_term = search_entry.get().lower()
-            tree.delete(*tree.get_children())
-            try:
-                import db
-                with db.connect() as conn:
-                    cursor = conn.execute("""
-                        SELECT e.id, s.name as student_name,
-                               sub.name as subject_name,
-                               CASE 
-                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
-                                   ELSE 'No Block'
-                               END as block_info
-                        FROM enrollments e
-                        LEFT JOIN students s ON e.student_id = s.id
-                        LEFT JOIN subjects sub ON e.subject_id = sub.id
-                        LEFT JOIN blocks b ON e.block_id = b.id
-                        WHERE s.name LIKE ? OR sub.name LIKE ? OR b.section LIKE ?
-                        ORDER BY s.name
-                    """, (f"%{search_term}%", f"%{search_term}%", f"%{search_term}%"))
-                    for row in cursor.fetchall():
-                        tree.insert("", "end", values=row)
-            except Exception as e:
-                messagebox.showerror("Database Error", f"Failed to search enrollments: {str(e)}")
-        
-        search_entry.bind("<KeyRelease>", search_enrollments)
-        load_enrollments_data()
-    
-    def show_teaching_assignments_table(container, search_entry):
-        style = ttk.Style()
-        style.configure("Treeview", background="#FFFFFF", foreground="#333333", rowheight=30, fieldbackground="#FFFFFF")
-        style.configure("Treeview.Heading", background="#F8F9FA", foreground="#691612", font=("Arial", 12, "bold"))
-        style.map("Treeview", background=[("selected", "#BF3131")], foreground=[("selected", "#FFFFFF")])
-        
-        tree_scroll = CTkScrollbar(container, orientation="vertical")
-        tree_scroll.pack(side="right", fill="y")
-        
-        tree = ttk.Treeview(
-            container,
-            columns=("ID", "Faculty", "Subject", "Block", "Semester"),
-            show="headings",
-            style="Treeview",
-            yscrollcommand=tree_scroll.set
-        )
-        tree_scroll.configure(command=tree.yview)
-        tree.pack(fill="both", expand=True)
-        
-        tree.heading("ID", text="ID")
-        tree.heading("Faculty", text="Faculty Name")
-        tree.heading("Subject", text="Subject")
-        tree.heading("Block", text="Block")
-        tree.heading("Semester", text="Semester")
-        
-        tree.column("ID", width=80, anchor="center")
-        tree.column("Faculty", width=200, anchor="w")
-        tree.column("Subject", width=200, anchor="w")
-        tree.column("Block", width=180, anchor="center")
-        tree.column("Semester", width=120, anchor="center")
-        
-        def load_teaching_assignments_data():
-            tree.delete(*tree.get_children())
-            try:
-                import db
-                with db.connect() as conn:
-                    cursor = conn.execute("""
-                        SELECT ta.id, f.name as faculty_name,
-                               sub.name as subject_name,
-                               CASE 
-                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
-                                   ELSE 'No Block'
-                               END as block_info,
-                               COALESCE(ta.semester, 'Not Set') as semester
-                        FROM teaching_assignments ta
-                        LEFT JOIN faculty f ON ta.faculty_id = f.id
-                        LEFT JOIN subjects sub ON ta.subject_id = sub.id
-                        LEFT JOIN blocks b ON ta.block_id = b.id
-                        ORDER BY f.name
-                    """)
-                    for row in cursor.fetchall():
-                        tree.insert("", "end", values=row)
-            except Exception as e:
-                messagebox.showerror("Database Error", f"Failed to load teaching assignments: {str(e)}")
-        
-        def search_teaching_assignments(event):
-            search_term = search_entry.get().lower()
-            tree.delete(*tree.get_children())
-            try:
-                import db
-                with db.connect() as conn:
-                    cursor = conn.execute("""
-                        SELECT ta.id, f.name as faculty_name,
-                               sub.name as subject_name,
-                               CASE 
-                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
-                                   ELSE 'No Block'
-                               END as block_info,
-                               COALESCE(ta.semester, 'Not Set') as semester
-                        FROM teaching_assignments ta
-                        LEFT JOIN faculty f ON ta.faculty_id = f.id
-                        LEFT JOIN subjects sub ON ta.subject_id = sub.id
-                        LEFT JOIN blocks b ON ta.block_id = b.id
-                        WHERE f.name LIKE ? OR sub.name LIKE ? OR b.section LIKE ? OR ta.semester LIKE ?
-                        ORDER BY f.name
-                    """, (f"%{search_term}%", f"%{search_term}%", f"%{search_term}%", f"%{search_term}%"))
-                    for row in cursor.fetchall():
-                        tree.insert("", "end", values=row)
-            except Exception as e:
-                messagebox.showerror("Database Error", f"Failed to search teaching assignments: {str(e)}")
-        
-        search_entry.bind("<KeyRelease>", search_teaching_assignments)
-        load_teaching_assignments_data()
-    
+    # ---------------- Export ---------------- #
     def export_table_data(table_name):
         try:
             import db
             import pandas as pd
             from tkinter import filedialog
             
-            # Get file path
             file_path = filedialog.asksaveasfilename(
                 defaultextension=".csv",
                 filetypes=[("CSV Files", "*.csv"), ("Excel Files", "*.xlsx")],
-                initialfile=f"{table_name.lower().replace(' ', '_')}_export"
+                initialfile=f"{table_name.lower()}_export"
             )
-            
             if not file_path:
                 return
             
-            # Export data based on table
             with db.connect() as conn:
-                if table_name == "Students":
-                    df = pd.read_sql_query("""
-                        SELECT s.id, s.name, 
-                               CASE 
-                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
-                                   ELSE 'No Block Assigned'
-                               END as block_info
-                        FROM students s
-                        LEFT JOIN blocks b ON s.block_id = b.id
-                        ORDER BY s.name
-                    """, conn)
-                elif table_name == "Faculty":
+                if table_name == "Faculty":
                     df = pd.read_sql_query("""
                         SELECT f.id, f.name, 
                                COALESCE(d.name, 'No Department') as dept_name,
-                               f.rank
+                               f.rank, f.subrank
                         FROM faculty f
                         LEFT JOIN departments d ON f.department_id = d.id
                         ORDER BY f.name
                     """, conn)
                 elif table_name == "Departments":
                     df = pd.read_sql_query("""
-                        SELECT d.id, d.name, 
-                               COUNT(f.id) as faculty_count
+                        SELECT d.id, d.name, COUNT(f.id) as faculty_count
                         FROM departments d
                         LEFT JOIN faculty f ON d.id = f.department_id
                         GROUP BY d.id, d.name
                         ORDER BY d.name
                     """, conn)
-                elif table_name == "Subjects":
-                    df = pd.read_sql_query("SELECT id, code, name, units FROM subjects ORDER BY code", conn)
-                elif table_name == "Blocks":
-                    df = pd.read_sql_query("""
-                        SELECT b.id, b.year_level, b.section,
-                               COUNT(s.id) as student_count
-                        FROM blocks b
-                        LEFT JOIN students s ON b.id = s.block_id
-                        GROUP BY b.id, b.year_level, b.section
-                        ORDER BY b.year_level, b.section
-                    """, conn)
-                elif table_name == "Enrollments":
-                    df = pd.read_sql_query("""
-                        SELECT e.id, s.name as student_name,
-                               sub.name as subject_name,
-                               CASE 
-                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
-                                   ELSE 'No Block'
-                               END as block_info
-                        FROM enrollments e
-                        LEFT JOIN students s ON e.student_id = s.id
-                        LEFT JOIN subjects sub ON e.subject_id = sub.id
-                        LEFT JOIN blocks b ON e.block_id = b.id
-                        ORDER BY s.name
-                    """, conn)
-                elif table_name == "Teaching Assignments":
-                    df = pd.read_sql_query("""
-                        SELECT ta.id, f.name as faculty_name,
-                               sub.name as subject_name,
-                               CASE 
-                                   WHEN b.year_level IS NOT NULL THEN 'Year ' || b.year_level || ' - Section ' || b.section
-                                   ELSE 'No Block'
-                               END as block_info,
-                               COALESCE(ta.semester, 'Not Set') as semester
-                        FROM teaching_assignments ta
-                        LEFT JOIN faculty f ON ta.faculty_id = f.id
-                        LEFT JOIN subjects sub ON ta.subject_id = sub.id
-                        LEFT JOIN blocks b ON ta.block_id = b.id
-                        ORDER BY f.name
-                    """, conn)
-                
-                # Save file
-                if file_path.endswith('.csv'):
-                    df.to_csv(file_path, index=False)
-                else:
-                    df.to_excel(file_path, index=False)
-                
-                messagebox.showinfo("Export Successful", f"{table_name} data exported to {file_path}")
-                
+            
+            if file_path.endswith('.csv'):
+                df.to_csv(file_path, index=False)
+            else:
+                df.to_excel(file_path, index=False)
+            
+            messagebox.showinfo("Export Successful", f"{table_name} data exported to {file_path}")
+        
         except Exception as e:
             messagebox.showerror("Export Error", f"Failed to export data: {str(e)}")
     
     # Show default tab
-    show_table_tab("Students")
+    show_table_tab("Faculty")
+
 
 
 

@@ -2,7 +2,7 @@ import os
 import sqlite3
 from typing import Optional
 
-DB_FILENAME = "ter_db.sqlite"
+DB_FILENAME = "ter_db2.sqlite"
 
 
 def get_default_db_path() -> str:
@@ -33,14 +33,15 @@ CREATE TABLE IF NOT EXISTS faculty (
     department_id INTEGER NOT NULL,
     name TEXT NOT NULL,
     rank TEXT NOT NULL CHECK (
-        rank IN ('Instructor','Assistant Professor','Associate Professor','Full Professor')
+        rank IN ('Instructor','Assistant Professor','Associate Professor','Professor')
     ),
     subrank TEXT NOT NULL CHECK (
-        subrank IN ('I','II','III','IV', 'V', 'VI'
+        subrank IN ('I','II','III','IV')
     ),
     FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
 );
 """
+
 
 
 def initialize_database(db_path: Optional[str] = None) -> str:

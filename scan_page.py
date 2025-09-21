@@ -107,39 +107,17 @@ class ScanPage:
         teacher_frame.pack(fill="x", pady=10)
 
         CTkLabel(teacher_frame, text="Select Teacher",
-                 font=('Montserrat', 16, 'bold'),
-                 text_color="#334155").pack(pady=(10, 5), padx=15, anchor="w")
+                font=('Montserrat', 16, 'bold'),
+                text_color="#334155").pack(pady=(10, 5), padx=15, anchor="w")
 
         self.teacher_dropdown = CTkOptionMenu(
             teacher_frame, variable=self.teacher_var, values=["Loading..."],
-            command=self.on_teacher_change,
+
             fg_color="#BF3131", button_color="#691612",
             text_color="#FFFFFF", font=('Montserrat', 14), width=250, height=35
         )
         self.teacher_dropdown.pack(padx=15, pady=(10, 5))
 
-        CTkLabel(teacher_frame, text="Select Subject",
-                 font=('Montserrat', 14, 'bold'),
-                 text_color="#334155").pack(pady=(5, 0), padx=15, anchor="w")
-
-        self.subject_dropdown = CTkOptionMenu(
-            teacher_frame, variable=self.subject_var, values=["No subjects"],
-            command=self.on_subject_change,
-            fg_color="#BF3131", button_color="#691612",
-            text_color="#FFFFFF", font=('Montserrat', 14), width=250, height=35, state="disabled"
-        )
-        self.subject_dropdown.pack(padx=15, pady=5)
-
-        CTkLabel(teacher_frame, text="Select Block",
-                 font=('Montserrat', 14, 'bold'),
-                 text_color="#334155").pack(pady=(5, 0), padx=15, anchor="w")
-
-        self.block_dropdown = CTkOptionMenu(
-            teacher_frame, variable=self.block_var, values=["No blocks"],
-            fg_color="#BF3131", button_color="#691612",
-            text_color="#FFFFFF", font=('Montserrat', 14), width=250, height=35, state="disabled"
-        )
-        self.block_dropdown.pack(padx=15, pady=(5, 10))
 
 
     def _build_results_panel(self, parent):
@@ -199,8 +177,7 @@ class ScanPage:
         try:
             with db.connect() as conn:
                 rows = conn.execute(
-                    "SELECT DISTINCT f.id, f.name FROM teaching_assignments ta "
-                    "JOIN faculty f ON ta.faculty_id = f.id ORDER BY f.name"
+                    "SELECT id, name FROM faculty ORDER BY name"
                 ).fetchall()
             if rows:
                 self.teacher_name_to_id = {name: fid for fid, name in rows}
@@ -209,58 +186,13 @@ class ScanPage:
                 self.teacher_dropdown.set(names[0])
                 self.on_teacher_change(names[0])
             else:
-                self.teacher_dropdown.configure(values=["No assigned teachers"])
+                self.teacher_dropdown.configure(values=["No teachers found"])
         except Exception as e:
             messagebox.showerror("DB Error", str(e))
 
 
-    def on_teacher_change(self, teacher_name):
-        """Load subjects when teacher changes."""
-        fid = self.teacher_name_to_id.get(teacher_name)
-        if not fid: return
 
-        try:
-            with db.connect() as conn:
-                rows = conn.execute(
-                    "SELECT DISTINCT s.id, s.code, s.name FROM teaching_assignments ta "
-                    "JOIN subjects s ON ta.subject_id = s.id "
-                    "WHERE ta.faculty_id = ? ORDER BY s.code", (fid,)
-                ).fetchall()
-            if rows:
-                self.subject_code_to_id = {code: sid for sid, code, name in rows}
-                values = [f"{code} - {name}" for sid, code, name in rows]
-                self.subject_dropdown.configure(values=values, state="normal")
-                self.subject_dropdown.set(values[0])
-                self.on_subject_change(values[0])
-            else:
-                self.subject_dropdown.configure(values=["No subjects"], state="disabled")
-        except Exception as e:
-            messagebox.showerror("DB Error", str(e))
-
-
-    def on_subject_change(self, subject_label):
-        if not subject_label or " - " not in subject_label: return
-        code = subject_label.split(" - ")[0]
-        sid = self.subject_code_to_id.get(code)
-        fid = self.teacher_name_to_id.get(self.teacher_var.get())
-
-        try:
-            with db.connect() as conn:
-                rows = conn.execute(
-                    "SELECT DISTINCT b.id, b.year_level, b.section FROM teaching_assignments ta "
-                    "JOIN blocks b ON ta.block_id = b.id "
-                    "WHERE ta.faculty_id = ? AND ta.subject_id = ? "
-                    "ORDER BY b.year_level, b.section", (fid, sid)
-                ).fetchall()
-            if rows:
-                self.block_label_to_id = {f"Year {y} - Section {s}": bid for bid, y, s in rows}
-                values = list(self.block_label_to_id.keys())
-                self.block_dropdown.configure(values=values, state="normal")
-                self.block_dropdown.set(values[0])
-            else:
-                self.block_dropdown.configure(values=["No blocks"], state="disabled")
-        except Exception as e:
-            messagebox.showerror("DB Error", str(e))
+    
 
 
     # ---------------- SCANNER ACTIONS ---------------- #
