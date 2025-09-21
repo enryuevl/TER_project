@@ -300,10 +300,14 @@ class ScanPage:
     def scan_existing(self):
         teacher = self.teacher_var.get()
         results = self.process_work_folder(teacher)
+        self.save_results_to_json()
         if results:
             self.processed_results.update(results)
             
+            
             self.update_preview(results.get(teacher, []))
+            
+
             
 
 

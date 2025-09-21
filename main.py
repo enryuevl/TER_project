@@ -1087,7 +1087,7 @@ for item, action in nav_actions.items():
         text=item,
         fg_color="#AC5353",
         font=("Arial", 14, "bold"),
-        text_color="#FFFFFF",
+        text_color="#FFFFFF",  
         hover_color="#BF3131",
         width=160,
         height=45,
