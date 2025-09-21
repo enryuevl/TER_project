@@ -13,7 +13,7 @@ from scanner import WIAScanner
 import threading
 import datetime
 import os
-from accounts_page import acc_page
+from accounts_page import AccountsPage
 from scan_page import ScanPage
 from results_page import ResultsPage
 
@@ -615,7 +615,7 @@ nav_actions = {
     "Scan": lambda: ScanPage(main_frame, processed_results),
     "Print": lambda: print("Print clicked"),
     "Results": lambda: ResultsPage(main_frame, processed_results),
-    "Accounts": lambda: acc_page(main_frame), 
+    "Accounts": lambda: AccountsPage(main_frame), 
     "Database": show_database_page
 }
 
