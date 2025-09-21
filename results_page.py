@@ -28,10 +28,15 @@ class ResultsPage:
 
         layout = CTkFrame(self.content_frame, fg_color="transparent")
         layout.pack(fill="both", expand=True, padx=10, pady=10)
-        layout.grid_rowconfigure(0, weight=1)
 
-        # Build teacher tabs (each tab gets its own table)
+        # Build teacher tabs (pack inside layout)
         self._build_tabs(layout)
+
+        # Bottom controls (also pack inside layout)
+        bottom_controls = CTkFrame(layout, fg_color="transparent")
+        bottom_controls.pack(fill="x", pady=10)
+        self._build_controls(bottom_controls)
+
 
     
     def _build_tabs(self, parent):
@@ -116,7 +121,15 @@ class ResultsPage:
 
 
         return table
-        
+    
+    def _build_controls(self, parent):
+        control_frame = CTkFrame(parent, fg_color="transparent")
+        control_frame.pack(fill="x", padx=10, pady=10)
+
+        load_btn = CTkButton(control_frame, text="Load Results", command=self.load_results)
+        load_btn.pack(side="left", padx=5)
+
+      
     # ---------------- Logic ---------------- #
     def load_results(self, path="results.pkl"):
         """Load processed_results dict from a pickle file."""
@@ -137,3 +150,4 @@ class ResultsPage:
         except Exception as e:
             print(f"❌ Error loading results: {e}")
             return {}
+        

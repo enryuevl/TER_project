@@ -1,7 +1,6 @@
 from customtkinter import *
 from PIL import Image, ImageTk
 from customtkinter import CTkImage
-import json
 import pickle
 import os
 from tkinter import messagebox, filedialog
@@ -268,11 +267,10 @@ class ScanPage:
     def start_scan(self):
         def worker():
             try:
-                # Initialize COM for this thread
                 pythoncom.CoInitialize()
-
                 teacher = self.teacher_var.get()
-                scanner = WIAScanner(teacher_name=teacher) 
+
+                scanner = WIAScanner(teacher_name=teacher)
                 info = scanner.initialize()
                 self.status_label.configure(text=f"Scanner detected: {info['name']}")
                 pages = scanner.scan_batch()
@@ -280,18 +278,22 @@ class ScanPage:
                 if pages > 0:
                     results = self.process_work_folder(teacher)
                     if results:
-                        self.processed_results.update(results)   # temporary hold new
-                        self.save_results()  # merges with pickle + updates memory
-                        self.update_preview(results.get(teacher, []))
+                        self.processed_results.update(results)
+                        self.save_results()
+
+                        # Preview the last scanned file immediately
+                        teacher_files = results.get(teacher, [])
+                        if teacher_files:
+                            last_file = teacher_files[-1][0]  # last filename
+                            self.display_image(last_file, teacher)
+
                     self.status_label.configure(text="Processing complete!")
                 else:
                     self.status_label.configure(text="No documents found.")
 
             except Exception as e:
                 messagebox.showerror("Scan Error", str(e))
-
             finally:
-                # Always uninitialize COM when done
                 pythoncom.CoUninitialize()
 
         threading.Thread(target=worker, daemon=True).start()
@@ -304,10 +306,7 @@ class ScanPage:
         if results:
             self.processed_results.update(results)
             
-            
             self.update_preview(results.get(teacher, []))
-            
-
             
 
 
@@ -352,7 +351,11 @@ class ScanPage:
 
 
     def process_work_folder(self, teacher):
+        
         folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Scan", teacher)
+        if not os.path.exists(folder):
+            os.makedirs(folder, exist_ok=True)  # create the teacher’s folder if missing
+
         new_results = []
 
         # Get last time just for this teacher
@@ -382,7 +385,7 @@ class ScanPage:
 
         return {teacher: new_results}
 
-
+    
 
     def save_results(self, path="results.pkl"):
         try:
@@ -403,7 +406,7 @@ class ScanPage:
                     if fname not in existing_files:
                         old_results[teacher].append((fname, result))
 
-            # Merge per-teacher last processed times
+            # Merge last processed times
             old_times.update(self.last_processed_times)
 
             data = {
@@ -413,12 +416,15 @@ class ScanPage:
             with open(path, "wb") as f:
                 pickle.dump(data, f)
 
+            # keep memory in sync
             self.processed_results = old_results
             self.last_processed_times = old_times
-            print(f"✅ Results saved with per-teacher tracking to {os.path.abspath(path)}")
 
+            print(f"✅ Results saved to {os.path.abspath(path)}")
         except Exception as e:
             print(f"❌ Error saving results: {e}")
+
+
             
     def load_results(self, path="results.pkl"):
         if not os.path.exists(path):
@@ -448,24 +454,33 @@ class ScanPage:
             self.document_listbox.configure(values=["No documents loaded"])
             self.img_label.configure(image=None, text="No image loaded")
             return
-        values = [f for f, *_ in teacher_results]
+
+        # list of just filenames
+        values = [fname for fname, *_ in teacher_results]
         self.document_listbox.configure(values=values)
         self.document_listbox.set(values[0])
+
+        # show first file in list
         self.display_image(values[0], self.teacher_var.get())
 
 
-    def display_image(self, filename, teacher):
-        if filename in self.annotated_cache:
-            # ✅ use session-only annotated version
-            rgb_img = cv2.cvtColor(self.annotated_cache[filename], cv2.COLOR_BGR2RGB)
-            pil_img = Image.fromarray(rgb_img).resize((400, 500), Image.Resampling.LANCZOS)
-        else:
-            # fallback to raw file
-            folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Scan", teacher)
-            path = os.path.join(folder, filename)
-            pil_img = Image.open(path).resize((400, 500), Image.Resampling.LANCZOS)
 
-        img_tk = CTkImage(light_image=pil_img, dark_image=pil_img, size=(400, 500))
-        self.img_label.configure(image=img_tk, text="")
-        self.img_label.image = img_tk
+    def display_image(self, filename, teacher):
+        try:
+            if filename in self.annotated_cache:
+                # ✅ Use session-only annotated version
+                rgb_img = cv2.cvtColor(self.annotated_cache[filename], cv2.COLOR_BGR2RGB)
+                pil_img = Image.fromarray(rgb_img).resize((400, 500), Image.Resampling.LANCZOS)
+            else:
+                # fallback to raw file
+                folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Scan", teacher)
+                path = os.path.join(folder, filename)
+                pil_img = Image.open(path).resize((400, 500), Image.Resampling.LANCZOS)
+
+            img_tk = CTkImage(light_image=pil_img, dark_image=pil_img, size=(400, 500))
+            self.img_label.configure(image=img_tk, text="")
+            self.img_label.image = img_tk
+        except Exception as e:
+            self.img_label.configure(image=None, text="Error loading image")
+            messagebox.showerror("Image Error", str(e))
 
