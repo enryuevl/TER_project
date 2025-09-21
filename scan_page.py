@@ -1,5 +1,9 @@
 from customtkinter import *
 from PIL import Image, ImageTk
+from customtkinter import CTkImage
+import json
+import pickle
+import os
 from tkinter import messagebox, filedialog
 import main_code
 import pandas as pd
@@ -14,6 +18,9 @@ class ScanPage:
         """Initialize the Scan Page inside a given frame."""
         self.master = master
         self.processed_results = processed_results
+        self.last_processed_times = {}
+        self.annotated_cache = {}  # Cache for annotated images
+        self.load_results()
 
         # Tkinter variables
         self.teacher_var = StringVar()
@@ -272,8 +279,10 @@ class ScanPage:
 
                 if pages > 0:
                     results = self.process_work_folder(teacher)
-                    self.processed_results.update(results)
-                    self.update_preview(results.get(teacher, []))
+                    if results:
+                        self.processed_results.update(results)   # temporary hold new
+                        self.save_results()  # merges with pickle + updates memory
+                        self.update_preview(results.get(teacher, []))
                     self.status_label.configure(text="Processing complete!")
                 else:
                     self.status_label.configure(text="No documents found.")
@@ -293,7 +302,10 @@ class ScanPage:
         results = self.process_work_folder(teacher)
         if results:
             self.processed_results.update(results)
+            
             self.update_preview(results.get(teacher, []))
+            
+
 
 
     def clear_scan(self):
@@ -337,43 +349,119 @@ class ScanPage:
 
     def process_work_folder(self, teacher):
         folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Scan", teacher)
-        if not os.path.exists(folder):
-            return {}
+        new_results = []
 
-        results = []
-        for file in os.listdir(folder):
-            if not file.lower().endswith((".bmp", ".jpg", ".jpeg", ".png")):
+        # Get last time just for this teacher
+        last_time = self.last_processed_times.get(teacher, 0)
+
+        for file in os.scandir(folder):
+            if not file.name.lower().endswith(".bmp"):
                 continue
-            try:
-                pil_img = Image.open(os.path.join(folder, file))
-                pil_img = main_code.fix_orientation(pil_img)
-                cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-                result = main_code.process_sections(cv_img)
-                results.append((file, result))
-            except Exception as e:
-                print("Error:", e)
-        return {teacher: results}
+
+            if file.stat().st_mtime <= last_time:
+                continue  # skip already processed
+
+            filepath = os.path.join(folder, file.name)
+            img = cv2.imread(filepath)
+
+            # process sections now returns (scores, annotated_img)
+            result_dict, annotated_img = main_code.process_sections(img)
+
+            # store only filename + results in pickle-ready structure
+            new_results.append((file.name, result_dict))
+
+            # cache annotated image just for this session
+            self.annotated_cache[file.name] = annotated_img
+
+            # update tracker for this teacher only
+            self.last_processed_times[teacher] = max(last_time, file.stat().st_mtime)
+
+        return {teacher: new_results}
 
 
+
+    def save_results(self, path="results.pkl"):
+        try:
+            if os.path.exists(path):
+                with open(path, "rb") as f:
+                    old_data = pickle.load(f)
+                old_results = old_data.get("results", {})
+                old_times = old_data.get("last_processed_times", {})
+            else:
+                old_results, old_times = {}, {}
+
+            # Merge teacher results
+            for teacher, docs in self.processed_results.items():
+                if teacher not in old_results:
+                    old_results[teacher] = []
+                existing_files = {fname for fname, *_ in old_results[teacher]}
+                for fname, result in docs:
+                    if fname not in existing_files:
+                        old_results[teacher].append((fname, result))
+
+            # Merge per-teacher last processed times
+            old_times.update(self.last_processed_times)
+
+            data = {
+                "results": old_results,
+                "last_processed_times": old_times
+            }
+            with open(path, "wb") as f:
+                pickle.dump(data, f)
+
+            self.processed_results = old_results
+            self.last_processed_times = old_times
+            print(f"✅ Results saved with per-teacher tracking to {os.path.abspath(path)}")
+
+        except Exception as e:
+            print(f"❌ Error saving results: {e}")
+            
+    def load_results(self, path="results.pkl"):
+        if not os.path.exists(path):
+            print("⚠️ No saved results found.")
+            return
+
+        try:
+            with open(path, "rb") as f:
+                data = pickle.load(f)
+
+            self.processed_results = data.get("results", {})
+            self.last_processed_times = data.get("last_processed_times", {})
+
+            print(f"✅ Results loaded from {os.path.abspath(path)}")
+        except Exception as e:
+            print(f"❌ Error loading results: {e}")
+            self.processed_results = {}
+            self.last_processed_times = {}
+
+
+
+
+            
+    #---------------- PREVIEW HANDLERS ---------------- #
     def update_preview(self, teacher_results):
         if not teacher_results:
             self.document_listbox.configure(values=["No documents loaded"])
             self.img_label.configure(image=None, text="No image loaded")
             return
-        values = [f for f, _ in teacher_results]
+        values = [f for f, *_ in teacher_results]
         self.document_listbox.configure(values=values)
         self.document_listbox.set(values[0])
         self.display_image(values[0], self.teacher_var.get())
 
 
     def display_image(self, filename, teacher):
-        folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Scan", teacher)
-        path = os.path.join(folder, filename)
-        try:
+        if filename in self.annotated_cache:
+            # ✅ use session-only annotated version
+            rgb_img = cv2.cvtColor(self.annotated_cache[filename], cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(rgb_img).resize((400, 500), Image.Resampling.LANCZOS)
+        else:
+            # fallback to raw file
+            folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Scan", teacher)
+            path = os.path.join(folder, filename)
             pil_img = Image.open(path).resize((400, 500), Image.Resampling.LANCZOS)
-            img_tk = ImageTk.PhotoImage(pil_img)
-            self.img_label.configure(image=img_tk, text="")
-            self.img_label.image = img_tk
-        except Exception as e:
-            self.img_label.configure(image=None, text="Error loading image")
-            messagebox.showerror("Image Error", str(e))
+
+        img_tk = CTkImage(light_image=pil_img, dark_image=pil_img, size=(400, 500))
+        self.img_label.configure(image=img_tk, text="")
+        self.img_label.image = img_tk
+
