@@ -5,26 +5,30 @@ from PIL import Image, ExifTags
 
 def fix_orientation(pil_img):
     try:
+        if not hasattr(pil_img, "_getexif"):
+            return pil_img  # Skip if no EXIF data (e.g., BMP)
+
         exif = pil_img._getexif()
         if exif is None:
             return pil_img
 
-        # Find the orientation tag
-        for tag, value in ExifTags.TAGS.items():
-            if value == 'Orientation':
-                orientation_tag = tag
-                break
+        orientation_tag = next(
+            (tag for tag, value in ExifTags.TAGS.items() if value == 'Orientation'),
+            None
+        )
 
-        orientation = exif.get(orientation_tag, None)
-        if orientation == 3:
-            pil_img = pil_img.rotate(180, expand=True)
-        elif orientation == 6:
-            pil_img = pil_img.rotate(270, expand=True)
-        elif orientation == 8:
-            pil_img = pil_img.rotate(90, expand=True)
+        if orientation_tag and orientation_tag in exif:
+            orientation = exif[orientation_tag]
+            if orientation == 3:
+                pil_img = pil_img.rotate(180, expand=True)
+            elif orientation == 6:
+                pil_img = pil_img.rotate(270, expand=True)
+            elif orientation == 8:
+                pil_img = pil_img.rotate(90, expand=True)
     except Exception as e:
         print("Error fixing orientation:", e)
     return pil_img
+
 
 def process_sections(img):
     resized = cv2.resize(img, (850, 1550))
@@ -129,10 +133,7 @@ def process_sections(img):
 
         all_section_scores[sec_name] = row_scores
         
-        # Print section summary
-        print(f"\n{sec_name} Scores:")
-        for row, score in sorted(row_scores.items()):
-            print(f"  Row {row}: Score {score}")
+        
 
     # Display all modified sections with highlighted circles
     

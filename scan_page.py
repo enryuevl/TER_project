@@ -1,5 +1,8 @@
 from customtkinter import *
 from PIL import Image, ImageTk
+from customtkinter import CTkImage
+import json
+
 from tkinter import messagebox, filedialog
 import main_code
 import pandas as pd
@@ -273,6 +276,7 @@ class ScanPage:
                 if pages > 0:
                     results = self.process_work_folder(teacher)
                     self.processed_results.update(results)
+                    self.save_results_to_json()
                     self.update_preview(results.get(teacher, []))
                     self.status_label.configure(text="Processing complete!")
                 else:
@@ -291,9 +295,13 @@ class ScanPage:
     def scan_existing(self):
         teacher = self.teacher_var.get()
         results = self.process_work_folder(teacher)
+        self.save_results_to_json()
         if results:
             self.processed_results.update(results)
+            
             self.update_preview(results.get(teacher, []))
+            
+
 
 
     def clear_scan(self):
@@ -354,6 +362,25 @@ class ScanPage:
                 print("Error:", e)
         return {teacher: results}
 
+    
+
+    def save_results_to_json(self, path="processed_results.json"):
+        """Save processed results to a JSON file (without images)."""
+        serializable = {}
+        for teacher, docs in self.processed_results.items():
+            serializable[teacher] = []
+            for filename, result, _ in docs:  # ignore cv_img
+                serializable[teacher].append({
+                    "filename": filename,
+                    "result": result
+                })
+        with open(path, "w") as f:
+            json.dump(serializable, f, indent=4)
+        print(f"✅ Results saved to {path}")
+
+
+    
+
 
     def update_preview(self, teacher_results):
         if not teacher_results:
@@ -371,7 +398,7 @@ class ScanPage:
         path = os.path.join(folder, filename)
         try:
             pil_img = Image.open(path).resize((400, 500), Image.Resampling.LANCZOS)
-            img_tk = ImageTk.PhotoImage(pil_img)
+            img_tk = CTkImage(light_image=pil_img, dark_image=pil_img, size=(400, 500))
             self.img_label.configure(image=img_tk, text="")
             self.img_label.image = img_tk
         except Exception as e:
