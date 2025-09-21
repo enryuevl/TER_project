@@ -30,6 +30,34 @@ def fix_orientation(pil_img):
     return pil_img
 
 
+
+def fix_orientation(pil_img):
+    try:
+        if not hasattr(pil_img, "_getexif"):
+            return pil_img  # Skip if no EXIF data (e.g., BMP)
+
+        exif = pil_img._getexif()
+        if exif is None:
+            return pil_img
+
+        orientation_tag = next(
+            (tag for tag, value in ExifTags.TAGS.items() if value == 'Orientation'),
+            None
+        )
+
+        if orientation_tag and orientation_tag in exif:
+            orientation = exif[orientation_tag]
+            if orientation == 3:
+                pil_img = pil_img.rotate(180, expand=True)
+            elif orientation == 6:
+                pil_img = pil_img.rotate(270, expand=True)
+            elif orientation == 8:
+                pil_img = pil_img.rotate(90, expand=True)
+    except Exception as e:
+        print("Error fixing orientation:", e)
+    return pil_img
+
+
 def process_sections(img):
     resized = cv2.resize(img, (850, 1550))
 
@@ -90,9 +118,23 @@ def process_sections(img):
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
 
         all_section_scores[sec_name] = row_scores
+        
+        print(f"{sec_name} scores: {row_scores}")
 
     # ✅ Return both the scores AND the full annotated page
     return all_section_scores, resized
+
+
+# Draw each unique detected circle
+        
+
+    
+
+    
+    
+
+# Example usage:
+
 
 
 # Draw each unique detected circle
