@@ -5,16 +5,19 @@ import pandas as pd
 import os
 from tksheet import Sheet   # make sure you have tksheet installed
 import pickle
+from tkinter import filedialog
+import openpyxl
+import win32com.client as win32
 
 
 class ResultsPage:
     def __init__(self, master, processed_results):
         self.master = master
         self.processed_results = processed_results
+        self.current_teacher = None
         self.tab_buttons = []
         
         self.load_results()
-        print("Loaded results:", self.processed_results)
         self._build_ui()
         
 
@@ -47,17 +50,25 @@ class ResultsPage:
             return
 
         # Create a tabview (like tabs at the top)
-        tabview = CTkTabview(parent, width=800, height=500)
-        tabview.pack(fill="both", expand=True, padx=10, pady=10)
+        self.tabview = CTkTabview(parent, width=800, height=500)
+        self.tabview.pack(fill="both", expand=True, padx=10, pady=10)
 
         # Loop over teacher names
         for teacher_name, _ in self.processed_results.items():
-            # Create a tab for each teacher
-            tab = tabview.add(teacher_name)
-
-            # Build a results table for this teacher
+            tab = self.tabview.add(teacher_name)
             self._build_table(tab, teacher_name)
-        
+
+        # Set the first teacher as current
+        if self.processed_results:
+            self.current_teacher = self.tabview.get()
+
+        # Bind tab change to update current_teacher
+        def on_tab_change():
+            # Get currently selected tab name
+            self.current_teacher = self.tabview.get()
+
+        self.tabview.configure(command=on_tab_change)
+
     def _build_table(self, parent, teacher_name):
         # Clear tab before building table
         for widget in parent.winfo_children():
@@ -124,10 +135,52 @@ class ResultsPage:
         control_frame = CTkFrame(parent, fg_color="transparent")
         control_frame.pack(fill="x", padx=10, pady=10)
 
-        load_btn = CTkButton(control_frame, text="Load Results", command=self.load_results)
+        load_btn = CTkButton(control_frame, text="print average", command=self.show_average_window)
         load_btn.pack(side="left", padx=5)
+    
+    def show_average_window(self):
+        print(self.current_teacher)
+        if not self.current_teacher:
+            messagebox.showwarning("No Teacher", "Please select a teacher first.")
+            return
 
-      
+        # --- Get processed averages ---
+        df = self._prepare_average_dataframe(self.current_teacher)
+        if df is None or df.empty:
+            messagebox.showinfo("No Data", "No scores available for this teacher.")
+            return
+
+        # --- Build UI window ---
+        self._open_average_popup(df)
+
+    def _open_average_popup(self, df):
+        """Open a popup window and show averages DataFrame in a tksheet table."""
+        win = CTkToplevel(self.master)
+        win.title(f"Averages - {self.current_teacher}")
+        win.geometry("600x400")
+
+        win.transient(self.master)
+        win.grab_set()
+        win.focus_force()
+        win.lift()
+
+        # Add tksheet table
+        sheet = Sheet(win, data=df.values.tolist(), headers=df.columns.tolist())
+        sheet.pack(fill="both", expand=True, padx=10, pady=10)
+
+        sheet.enable_bindings((
+            "single_select",
+            "row_select",
+            "column_width_resize",
+            "row_height_resize",
+            "arrowkeys",
+            "copy",
+        ))
+
+        # Buttons
+        CTkButton(win, text="Close", command=win.destroy).pack(pady=5)
+        CTkButton(win, text="open summary", command=lambda: self.open_excel_in_sheet()).pack(pady=5)
+    
     # ---------------- Logic ---------------- #
     def load_results(self, path="results.pkl"):
         """Load processed_results dict from a pickle file."""
@@ -149,4 +202,67 @@ class ResultsPage:
             print(f"❌ Error loading results: {e}")
             return {}
     
-      
+    def calculate_row_averages(self, teacher_name):
+        teacher_data = self.processed_results.get(teacher_name, [])
+        if not teacher_data:
+            return {}
+
+        row_scores = {}
+
+        # Collect all rows for all documents
+        for _, result, *_ in teacher_data:
+            for section, rows in result.items():
+                for rownum, score in rows.items():
+                    row_key = f"{section} R{rownum}"
+                    row_scores.setdefault(row_key, []).append(score)
+
+        # Compute averages
+        averages = {}
+        for row_key, scores in row_scores.items():
+            if scores:
+                averages[row_key] = sum(scores) / len(scores)
+
+        return averages # return dict of row_key -> average score
+
+    def print_row_averages(self):
+        if not self.current_teacher:
+            print("⚠️ No teacher selected")
+            return
+        
+        averages = self.calculate_row_averages(self.current_teacher)
+        print(f"\n📊 Row Averages for {self.current_teacher}:")
+        for row_key, avg in averages.items():
+            print(f"  {row_key}: {avg:.2f}")
+    
+    def _prepare_average_dataframe(self, teacher_name):
+        """Compute averages per row, section totals, and grand total, return as DataFrame."""
+        averages = self.calculate_row_averages(teacher_name)
+        if not averages:
+            return None
+
+        # Group averages by section
+        section_rows = {}
+        for row_key, avg in averages.items():
+            section = " ".join(row_key.split()[:2])  # "Section 1"
+            section_rows.setdefault(section, []).append((row_key, avg))
+
+        # Build structured data
+        data = []
+        section_totals = []
+        for section, rows in section_rows.items():
+            section_total = sum(avg for _, avg in rows)
+            section_totals.append(section_total)
+
+            for i, (row_key, avg) in enumerate(rows):
+                if i == 0:
+                    data.append((row_key, round(avg, 2), round(section_total, 2)))
+                else:
+                    data.append((row_key, round(avg, 2), ""))
+
+        # Add grand total row
+        grand_total = sum(section_totals)
+        data.append(("Grand Total", "", round(grand_total, 2)))
+
+        return pd.DataFrame(data, columns=["Row", "Average Score", "Section Total"])
+
+    
