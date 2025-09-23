@@ -65,7 +65,6 @@ class ScanPage:
         right_column.grid(row=0, column=1, sticky="nsew", padx=10)
         self._build_preview_panel(right_column)
 
-
     def _build_scanner_controls(self, parent):
         scanner_frame = CTkFrame(parent, fg_color="#FFFFFF", corner_radius=10)
         scanner_frame.pack(fill="x", pady=10)
@@ -101,7 +100,6 @@ class ScanPage:
                                      text_color="#64748B")
         self.status_label.pack(pady=5, padx=15, anchor="w")
 
-
     def _build_teacher_dropdown(self, parent):
         teacher_frame = CTkFrame(parent, fg_color="#FFFFFF", corner_radius=10)
         teacher_frame.pack(fill="x", pady=10)
@@ -117,8 +115,6 @@ class ScanPage:
             text_color="#FFFFFF", font=('Montserrat', 14), width=250, height=35
         )
         self.teacher_dropdown.pack(padx=15, pady=(10, 5))
-
-
 
     def _build_results_panel(self, parent):
         results_frame = CTkFrame(parent, fg_color="#FFFFFF", corner_radius=10)
@@ -151,7 +147,6 @@ class ScanPage:
                                      fg_color="#94A3B8", state="disabled")
         self.save_button.pack(fill="x", pady=5)
 
-
     def _build_preview_panel(self, parent):
         preview_frame = CTkFrame(parent, fg_color="#FFFFFF", corner_radius=10)
         preview_frame.pack(fill="both", expand=True)
@@ -171,7 +166,6 @@ class ScanPage:
                                   fg_color="#555555", width=400, height=500)
         self.img_label.pack(padx=10, pady=20, fill="both", expand=True)
 
-
     # ---------------- DB HANDLERS ---------------- #
     def load_teachers(self):
         try:
@@ -184,16 +178,11 @@ class ScanPage:
                 names = list(self.teacher_name_to_id.keys())
                 self.teacher_dropdown.configure(values=names)
                 self.teacher_dropdown.set(names[0])
-                self.on_teacher_change(names[0])
+
             else:
                 self.teacher_dropdown.configure(values=["No teachers found"])
         except Exception as e:
             messagebox.showerror("DB Error", str(e))
-
-
-
-    
-
 
     # ---------------- SCANNER ACTIONS ---------------- #
     def start_scan(self):
@@ -230,7 +219,6 @@ class ScanPage:
 
         threading.Thread(target=worker, daemon=True).start()
 
-
     def scan_existing(self):
         teacher = self.teacher_var.get()
         results = self.process_work_folder(teacher)
@@ -240,14 +228,10 @@ class ScanPage:
             
             self.update_preview(results.get(teacher, []))
             
-
-
-
     def clear_scan(self):
         self.img_label.configure(image=None, text="No image loaded")
         self.document_listbox.configure(values=["No documents loaded"])
         self.processed_results.clear()
-
 
     # ---------------- PROCESS & SAVE ---------------- #
     def process_scan(self):
@@ -256,7 +240,6 @@ class ScanPage:
             return
         self.progress_bar.set(1.0)
         messagebox.showinfo("Done", "Evaluation processed successfully!")
-
 
     def save_result(self):
         if not self.processed_results:
@@ -280,7 +263,6 @@ class ScanPage:
             messagebox.showinfo("Saved", f"Results saved to {os.path.basename(path)}")
         except Exception as e:
             messagebox.showerror("Save Error", str(e))
-
 
     def process_work_folder(self, teacher):
         
@@ -316,8 +298,6 @@ class ScanPage:
             self.last_processed_times[teacher] = max(last_time, file.stat().st_mtime)
 
         return {teacher: new_results}
-
-    
 
     def save_results(self, path="results.pkl"):
         try:
@@ -355,9 +335,7 @@ class ScanPage:
             print(f"✅ Results saved to {os.path.abspath(path)}")
         except Exception as e:
             print(f"❌ Error saving results: {e}")
-
-
-            
+     
     def load_results(self, path="results.pkl"):
         if not os.path.exists(path):
             print("⚠️ No saved results found.")
@@ -375,11 +353,7 @@ class ScanPage:
             print(f"❌ Error loading results: {e}")
             self.processed_results = {}
             self.last_processed_times = {}
-
-
-
-
-            
+   
     #---------------- PREVIEW HANDLERS ---------------- #
     def update_preview(self, teacher_results):
         if not teacher_results:
@@ -394,8 +368,6 @@ class ScanPage:
 
         # show first file in list
         self.display_image(values[0], self.teacher_var.get())
-
-
 
     def display_image(self, filename, teacher):
         try:

@@ -37,8 +37,6 @@ class ResultsPage:
         bottom_controls.pack(fill="x", pady=10)
         self._build_controls(bottom_controls)
 
-
-    
     def _build_tabs(self, parent):
         for widget in parent.winfo_children():
             widget.destroy()
@@ -150,4 +148,5 @@ class ResultsPage:
         except Exception as e:
             print(f"❌ Error loading results: {e}")
             return {}
-        
+    
+      
