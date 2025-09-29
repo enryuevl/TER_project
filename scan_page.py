@@ -10,6 +10,7 @@ import cv2, numpy as np, os, threading
 from scanner import WIAScanner
 import db
 import pythoncom
+from utils import set_sidebar_state
 
 
 class ScanPage:
@@ -104,17 +105,38 @@ class ScanPage:
         teacher_frame = CTkFrame(parent, fg_color="#FFFFFF", corner_radius=10)
         teacher_frame.pack(fill="x", pady=10)
 
-        CTkLabel(teacher_frame, text="Select Teacher",
-                font=('Montserrat', 16, 'bold'),
-                text_color="#334155").pack(pady=(10, 5), padx=15, anchor="w")
+        # --- Teacher selection ---
+        CTkLabel(
+            teacher_frame, text="Select Teacher",
+            font=('Montserrat', 16, 'bold'),
+            text_color="#334155"
+        ).pack(pady=(10, 5), padx=15, anchor="w")
 
         self.teacher_dropdown = CTkOptionMenu(
             teacher_frame, variable=self.teacher_var, values=["Loading..."],
-
             fg_color="#BF3131", button_color="#691612",
-            text_color="#FFFFFF", font=('Montserrat', 14), width=250, height=35
+            text_color="#FFFFFF", font=('Montserrat', 14),
+            width=250, height=35
         )
         self.teacher_dropdown.pack(padx=15, pady=(10, 5))
+
+        # --- Rater type selection ---
+        CTkLabel(
+            teacher_frame, text="Select Rater Type",
+            font=('Montserrat', 16, 'bold'),
+            text_color="#334155"
+        ).pack(pady=(10, 5), padx=15, anchor="w")
+
+        self.rater_var = StringVar(value="Student")  # default option
+        self.rater_dropdown = CTkOptionMenu(
+            teacher_frame, variable=self.rater_var,
+            values=["Student", "Peer", "Self", "Dean"],
+            fg_color="#BF3131", button_color="#691612",
+            text_color="#FFFFFF", font=('Montserrat', 14),
+            width=250, height=35
+        )
+        self.rater_dropdown.pack(padx=15, pady=(10, 5))
+
 
     def _build_results_panel(self, parent):
         results_frame = CTkFrame(parent, fg_color="#FFFFFF", corner_radius=10)
@@ -143,7 +165,7 @@ class ScanPage:
         self.process_button.pack(fill="x", pady=5)
 
         self.save_button = CTkButton(action_frame, text="Save Results",
-                                     command=self.save_result,
+                                     command=self.save_csv,
                                      fg_color="#94A3B8", state="disabled")
         self.save_button.pack(fill="x", pady=5)
 
@@ -194,6 +216,7 @@ class ScanPage:
                 scanner = WIAScanner(teacher_name=teacher)
                 info = scanner.initialize()
                 self.status_label.configure(text=f"Scanner detected: {info['name']}")
+
                 pages = scanner.scan_batch()
 
                 if pages > 0:
@@ -202,10 +225,9 @@ class ScanPage:
                         self.processed_results.update(results)
                         self.save_results()
 
-                        # Preview the last scanned file immediately
-                        teacher_files = results.get(teacher, [])
+                        teacher_files = results.get(teacher, {}).get(self.rater_var.get(), [])
                         if teacher_files:
-                            last_file = teacher_files[-1][0]  # last filename
+                            last_file = teacher_files[-1][0]
                             self.display_image(last_file, teacher)
 
                     self.status_label.configure(text="Processing complete!")
@@ -216,8 +238,45 @@ class ScanPage:
                 messagebox.showerror("Scan Error", str(e))
             finally:
                 pythoncom.CoUninitialize()
+                # ✅ re-enable controls and close popup
+                self.set_controls_state("normal")
+                set_sidebar_state
+                if hasattr(self, "wait_popup") and self.wait_popup.winfo_exists():
+                    self.wait_popup.destroy()
+
+        # ✅ disable controls and show popup
+        self.set_controls_state("disabled")
+        set_sidebar_state("disabled")
+        self.wait_popup = CTkToplevel(self.master)
+        self.wait_popup.title("Please Wait")
+
+        # desired popup size
+        popup_w, popup_h = 300, 120
+
+        # get screen size
+        screen_w = self.wait_popup.winfo_screenwidth()
+        screen_h = self.wait_popup.winfo_screenheight()
+
+        # calculate x, y for centering
+        x = (screen_w // 2) - (popup_w // 2)
+        y = (screen_h // 2) - (popup_h // 2)
+
+        # set geometry with position
+        self.wait_popup.geometry(f"{popup_w}x{popup_h}+{x}+{y}")
+
+        # optional: disable resizing
+        self.wait_popup.resizable(False, False)
+
+        self.wait_popup.grab_set()
+        CTkLabel(
+            self.wait_popup,
+            text="Scanning in progress...\nPlease wait.",
+            font=("Roboto", 14),
+            text_color="#374151"
+        ).pack(expand=True, pady=30)
 
         threading.Thread(target=worker, daemon=True).start()
+
 
     def scan_existing(self):
         teacher = self.teacher_var.get()
@@ -241,7 +300,7 @@ class ScanPage:
         self.progress_bar.set(1.0)
         messagebox.showinfo("Done", "Evaluation processed successfully!")
 
-    def save_result(self):
+    def save_csv(self):
         if not self.processed_results:
             messagebox.showwarning("Warning", "Nothing to save.")
             return
@@ -265,39 +324,49 @@ class ScanPage:
             messagebox.showerror("Save Error", str(e))
 
     def process_work_folder(self, teacher):
-        
         folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Scan", teacher)
         if not os.path.exists(folder):
-            os.makedirs(folder, exist_ok=True)  # create the teacher’s folder if missing
+            os.makedirs(folder, exist_ok=True)
 
         new_results = []
-
-        # Get last time just for this teacher
         last_time = self.last_processed_times.get(teacher, 0)
 
         for file in os.scandir(folder):
             if not file.name.lower().endswith(".bmp"):
                 continue
-
             if file.stat().st_mtime <= last_time:
-                continue  # skip already processed
+                continue
 
             filepath = os.path.join(folder, file.name)
             img = cv2.imread(filepath)
 
-            # process sections now returns (scores, annotated_img)
             result_dict, annotated_img = main_code.process_sections(img)
-
-            # store only filename + results in pickle-ready structure
             new_results.append((file.name, result_dict))
 
-            # cache annotated image just for this session
             self.annotated_cache[file.name] = annotated_img
-
-            # update tracker for this teacher only
             self.last_processed_times[teacher] = max(last_time, file.stat().st_mtime)
 
-        return {teacher: new_results}
+        # --- use dropdown rater type ---
+        rater = self.rater_var.get() if hasattr(self, "rater_var") else "Unknown"
+
+        return {teacher: {rater: new_results}}
+
+    def set_controls_state(self, state="normal"):
+        """Enable or disable all buttons/menus in the scan page."""
+        widgets = [
+            self.process_button,
+            self.save_button,
+            self.teacher_dropdown,
+            self.document_listbox,
+            # add more if needed
+        ]
+        for w in widgets:
+            try:
+                w.configure(state=state)
+            except Exception:
+                pass
+
+    
 
     def save_results(self, path="results.pkl"):
         try:
@@ -309,16 +378,25 @@ class ScanPage:
             else:
                 old_results, old_times = {}, {}
 
-            # Merge teacher results
-            for teacher, docs in self.processed_results.items():
-                if teacher not in old_results:
-                    old_results[teacher] = []
-                existing_files = {fname for fname, *_ in old_results[teacher]}
-                for fname, result in docs:
-                    if fname not in existing_files:
-                        old_results[teacher].append((fname, result))
+            # --- merge new results ---
+            for teacher, rater_dict in self.processed_results.items():
+                # 🔑 Normalize flat list → wrap as "Unknown"
+                if isinstance(rater_dict, list):
+                    rater_dict = {"Unknown": rater_dict}
 
-            # Merge last processed times
+                if teacher not in old_results:
+                    old_results[teacher] = {}
+
+                for rater, docs in rater_dict.items():
+                    if rater not in old_results[teacher]:
+                        old_results[teacher][rater] = []
+
+                    existing_files = {fname for fname, *_ in old_results[teacher][rater]}
+                    for fname, result in docs:
+                        if fname not in existing_files:
+                            old_results[teacher][rater].append((fname, result))
+
+            # merge last processed times
             old_times.update(self.last_processed_times)
 
             data = {
@@ -328,17 +406,20 @@ class ScanPage:
             with open(path, "wb") as f:
                 pickle.dump(data, f)
 
-            # keep memory in sync
             self.processed_results = old_results
             self.last_processed_times = old_times
 
             print(f"✅ Results saved to {os.path.abspath(path)}")
         except Exception as e:
             print(f"❌ Error saving results: {e}")
+
+
      
     def load_results(self, path="results.pkl"):
         if not os.path.exists(path):
             print("⚠️ No saved results found.")
+            self.processed_results = {}
+            self.last_processed_times = {}
             return
 
         try:
@@ -348,11 +429,17 @@ class ScanPage:
             self.processed_results = data.get("results", {})
             self.last_processed_times = data.get("last_processed_times", {})
 
+            # 🔑 Normalize: wrap flat lists into {"Unknown": [...]}
+            for teacher, val in list(self.processed_results.items()):
+                if isinstance(val, list):
+                    self.processed_results[teacher] = {"Unknown": val}
+
             print(f"✅ Results loaded from {os.path.abspath(path)}")
         except Exception as e:
             print(f"❌ Error loading results: {e}")
             self.processed_results = {}
             self.last_processed_times = {}
+
    
     #---------------- PREVIEW HANDLERS ---------------- #
     def update_preview(self, teacher_results):

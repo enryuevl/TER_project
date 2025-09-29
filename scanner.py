@@ -90,7 +90,6 @@ class WIAScanner:
             return True
     
     def scan_page(self, output_filename):
-        """Scan a single page and save it in the main output folder (name detection removed)"""
         try:
             conn = self.connect()
             scan_item = conn.Items[1]
@@ -98,14 +97,14 @@ class WIAScanner:
             output_path = os.path.join(self.output_dir, output_filename)
             image.SaveFile(output_path)
             print(f"\n📝 Processing scanned document: {output_filename}")
-            # Name detection and organization removed
-            print("Document saved in main scanned folder.")
             return True
         except Exception as e:
-            if not self.has_more_pages():
+            # If feeder empty → stop scanning
+            if "no documents left" in str(e).lower():
                 return False
             print(f"❌ Scan failed: {e}")
             return False
+
             
     def scan_batch(self):
         """Scan all pages from ADF"""

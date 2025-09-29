@@ -1,19 +1,28 @@
-import tkinter as tk
+import customtkinter as ctk
 
-def on_resize(event):
-    width = event.width
-    height = event.height
-    print(f"Window size: {width}x{height}")
+# Create the main window
+root = ctk.CTk()
+root.title("Tabview Test - Tabs on Upper Left")
+root.geometry("500x300")
 
-def main():
-    root = tk.Tk()
-    root.title("Window Size Example")
-    root.geometry("600x400")  # starting size
+# Create a Tabview with tabs aligned top-left
+tabview = ctk.CTkTabview(
+    master=root,
+    width=400,
+    height=250,
+    anchor="w"   # "w" = west (left side) alignment
+)
+tabview.pack(padx=20, pady=20, fill="both", expand=True)
 
-    # Bind the resize event
-    root.bind("<Configure>", on_resize)
+# Add tabs
+tabview.add("Home")
+tabview.add("Settings")
+tabview.add("About")
 
-    root.mainloop()
+# Place widgets inside tabs
+ctk.CTkLabel(tabview.tab("Home"), text="Welcome to the Home Tab!", font=("Arial", 14)).pack(pady=20)
+ctk.CTkLabel(tabview.tab("Settings"), text="Adjust your preferences here.", font=("Arial", 14)).pack(pady=20)
+ctk.CTkLabel(tabview.tab("About"), text="TabView Demo\nTabs aligned to the left.", font=("Arial", 14)).pack(pady=20)
 
-if __name__ == "__main__":
-    main()
+# Run the app
+root.mainloop()

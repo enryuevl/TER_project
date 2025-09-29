@@ -609,6 +609,7 @@ def show_database_page():
 
 
 
+sidebar_buttons = {}
 # Navigation sidebar buttons
 nav_actions = {
     "Dashboard": render_home_page,
@@ -620,7 +621,7 @@ nav_actions = {
 }
 
 for item, action in nav_actions.items():
-    CTkButton(
+    btn = CTkButton(
         master=sidebar_frame,
         image=load_icon(item),
         text=item,
@@ -634,7 +635,18 @@ for item, action in nav_actions.items():
         compound="left",
         command=action
     ).pack(pady=15, padx=20)
+    sidebar_buttons[item] = btn
 
+utils.sidebar_buttons = sidebar_buttons
+
+def set_sidebar_state(state="normal"):
+        """Enable or disable all sidebar navigation buttons."""
+        for btn in sidebar_buttons.values():
+            try:
+                btn.configure(state=state)
+            except Exception:
+                pass
+             
 # Render the home page by default
 render_home_page()
 

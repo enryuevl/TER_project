@@ -158,3 +158,16 @@ def detect_shaded_areas_connected(section_img, section_name="Section", fill_thre
                     cv2.circle(section_img, (x, y), 10, (0, 255, 0), 2)
     
     return section_img, detected_areas
+
+
+# ui_utils.py
+
+sidebar_buttons = {}
+
+def set_sidebar_state(state="normal"):
+    """Enable or disable all sidebar navigation buttons."""
+    for btn in sidebar_buttons.values():
+        try:
+            btn.configure(state=state)
+        except Exception:
+            pass
