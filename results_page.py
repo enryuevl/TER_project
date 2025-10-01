@@ -21,7 +21,6 @@ class ResultsPage:
         print(self.processed_results)
         self._build_ui()
         
-
 # ---------------- UI ---------------- #
     def _build_ui(self):
         for widget in self.master.winfo_children():
@@ -49,7 +48,6 @@ class ResultsPage:
         self.controls_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=10)
         self._build_controls(self.controls_frame)
 
-
     def _build_tabs(self, parent):
         tab_frame = CTkFrame(parent, fg_color="transparent")
         tab_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
@@ -76,7 +74,6 @@ class ResultsPage:
 
         if first_teacher:
             self._on_teacher_selected(parent, first_teacher)
-
 
     def _build_table(self, parent, teacher_name, rater_type=None):
         # Clear previous table
@@ -148,22 +145,11 @@ class ResultsPage:
 
         return table
 
-
     def _build_controls(self, parent):
         control_frame = CTkFrame(parent, fg_color="transparent")
         control_frame.pack(fill="x", padx=10, pady=10)
 
-        load_btn = CTkButton(
-            control_frame,
-            text="Show calculations",
-            command=self.open_calculations_window,
-            fg_color="#DC2626",  # Red primary color
-            hover_color="#B91C1C",  # Darker red on hover
-            text_color="#FFFFFF",
-            font=("Roboto", 14),
-            corner_radius=5
-        )
-        load_btn.pack(side="left", padx=5)
+        
 
         # New Summary View Button
         summary_btn = CTkButton(
@@ -196,7 +182,6 @@ class ResultsPage:
             command=lambda choice: self._on_rater_selected(choice)  # <— added callback
         )
         self.rater_dropdown.pack(padx=15, pady=10)
-
         
     def show_summary_window(self):
         if not self.current_teacher:
@@ -258,31 +243,6 @@ class ResultsPage:
             e.delete(0, "end")
             e.insert(0, eq_adj)
             
-    def open_calculations_window(self):
-        print(self.current_teacher)
-        if not self.current_teacher:
-            messagebox.showwarning("No Teacher", "Please select a teacher first.")
-            return
-
-        # --- Get processed averages ---
-        df = self._build_dataframe(self.current_teacher)
-        if df is None or df.empty:
-            messagebox.showinfo("No Data", "No scores available for this teacher.")
-            return
-
-        # --- Build UI window ---
-        self._open_calculations_popup(df)
-
-    def _build_dataframe(self, teacher_name):
-        """
-        Build a Pandas DataFrame from the calculated section totals.
-        """
-        data = self._calculate_section_totals(teacher_name)
-        if not data:
-            return None
-
-        return pd.DataFrame(data, columns=["Row", "Average Score", "Section Total"])
-    
     # ---------------- Logic ---------------- #
     def _open_summary_popup(self):
         # Get screen width and height
@@ -533,8 +493,6 @@ class ResultsPage:
             print(f"❌ DB lookup failed: {e}")
             return ""
 
-
-    
     def save_summary_data(self, template_path="summary.xlsx"):
         from openpyxl import load_workbook
         from tkinter import messagebox
@@ -614,34 +572,6 @@ class ResultsPage:
         except Exception as e:
             messagebox.showerror("Save Error", str(e))
 
-    def _open_calculations_popup(self, df):
-        """Open a popup window and show averages DataFrame in a tksheet table."""
-        win = CTkToplevel(self.master)
-        win.title(f"Averages - {self.current_teacher}")
-        win.geometry("600x400")
-
-        win.transient(self.master)
-        win.grab_set()
-        win.focus_force()
-        win.lift()
-
-        # Add tksheet table
-        sheet = Sheet(win, data=df.values.tolist(), headers=df.columns.tolist())
-        sheet.pack(fill="both", expand=True, padx=10, pady=10)
-
-        sheet.enable_bindings((
-            "single_select",
-            "row_select",
-            "column_width_resize",
-            "row_height_resize",
-            "arrowkeys",
-            "copy",
-        ))
-
-        # Buttons
-        CTkButton(win, text="Close", command=win.destroy).pack(pady=5)
-        CTkButton(win, text="open summary", command=lambda: self.open_excel_in_sheet()).pack(pady=5)
-    
     def load_results(self, path="results.pkl"):
         """Load processed_results dict from a pickle file (teacher → rater → docs)."""
         if not os.path.exists(path):
@@ -694,83 +624,6 @@ class ResultsPage:
         }
         return mapping.get(eq_num, "")
 
-    
-    def calculate_row_averages(self, teacher_name, rater_type=None):
-        """Compute averages for a teacher and selected rater type."""
-        teacher_data = self.processed_results.get(teacher_name, {})
-
-        # Handle old flat list format
-        if isinstance(teacher_data, list):
-            teacher_data = {"Unknown": teacher_data}
-
-        # pick selected rater or default
-        if not rater_type:
-            if hasattr(self, "rater_var"):
-                rater_type = self.rater_var.get()
-            else:
-                rater_type = next(iter(teacher_data.keys()), None)
-
-        if not rater_type or rater_type not in teacher_data:
-            return {}
-
-        row_scores = {}
-
-        # Collect all rows for all documents under this rater
-        for _, result, *_ in teacher_data[rater_type]:
-            for section, rows in result.items():
-                for rownum, score in rows.items():
-                    row_key = f"{section} R{rownum}"
-                    row_scores.setdefault(row_key, []).append(score)
-
-        # Compute averages
-        averages = {}
-        for row_key, scores in row_scores.items():
-            if scores:
-                averages[row_key] = sum(scores) / len(scores)
-
-        return averages  # dict of row_key -> average score
-
-
-    def print_row_averages(self):
-        if not self.current_teacher:
-            print("⚠️ No teacher selected")
-            return
-        
-        averages = self.calculate_row_averages(self.current_teacher)
-        print(f"\n📊 Row Averages for {self.current_teacher}:")
-        for row_key, avg in averages.items():
-            print(f"  {row_key}: {avg:.2f}")
-    
-    def _calculate_section_totals(self, teacher_name):
-        averages = self.calculate_row_averages(teacher_name)
-        if not averages:
-            return None
-
-        # Group averages by section
-        section_rows = {}
-        for row_key, avg in averages.items():
-            section = " ".join(row_key.split()[:2])  # e.g. "Section 1"
-            section_rows.setdefault(section, []).append((row_key, avg))
-
-        # Build structured data (list of tuples)
-        data = []
-        section_totals = []
-        for section, rows in section_rows.items():
-            section_total = sum(avg for _, avg in rows)
-            section_totals.append(section_total)
-
-            for i, (row_key, avg) in enumerate(rows):
-                if i == 0:
-                    data.append((row_key, round(avg, 2), round(section_total, 2)))
-                else:
-                    data.append((row_key, round(avg, 2), ""))
-
-        # Add grand total row
-        grand_total = sum(section_totals)
-        data.append(("Grand Total", "", round(grand_total, 2)))
-        print(data)
-        return data
-    
     def _on_teacher_selected(self, parent, teacher_name):
         self.current_teacher = teacher_name
 
