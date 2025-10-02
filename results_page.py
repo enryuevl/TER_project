@@ -12,7 +12,7 @@ from datetime import datetime
 from openpyxl import load_workbook
 from openpyxl import Workbook
 from tkinter import ttk, messagebox
-
+import db
 
 class ResultsPage:
     def __init__(self, master, processed_results):
@@ -537,8 +537,14 @@ class ResultsPage:
     
 
     # ---------------- Data Persistence ---------------- #
-    def load_results(self, path="results.pkl"):
+    def load_results(self, path=None):
         """Load processed_results dict from a pickle file (teacher → rater → docs)."""
+        # 🔹 default path = same folder as database
+        if path is None:
+            db_path = db.get_default_db_path()
+            base_dir = os.path.dirname(db_path)
+            path = os.path.join(base_dir, "results.pkl")
+
         if not os.path.exists(path):
             print("⚠️ No saved results found.")
             self.processed_results = {}
@@ -548,7 +554,7 @@ class ResultsPage:
             with open(path, "rb") as f:
                 data = pickle.load(f)
 
-            # Make sure we only extract the nested results
+            # ✅ Ensure we extract results correctly
             if isinstance(data, dict) and "results" in data:
                 self.processed_results = data["results"]
             else:
@@ -556,10 +562,9 @@ class ResultsPage:
                 self.processed_results = {}
                 for teacher, docs in data.items():
                     self.processed_results[teacher] = {"Unknown": docs}
-        
+
             return self.processed_results
-        
-        
+
         except Exception as e:
             print(f"❌ Error loading results: {e}")
             self.processed_results = {}

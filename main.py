@@ -138,7 +138,7 @@ style.map(
 sidebar_buttons = {}
 # Navigation sidebar buttons
 nav_actions = {
-    "Dashboard": lambda: HomePage(main_frame, processed_results),
+    "Dashboard": lambda: HomePage(main_frame),
     "Scan": lambda: ScanPage(main_frame, processed_results),
     "Dean": lambda: DeanEvaluationForm(main_frame, processed_results),
     "Results": lambda: ResultsPage(main_frame, processed_results),

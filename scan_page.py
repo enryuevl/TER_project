@@ -397,8 +397,16 @@ class ScanPage:
 
     
 
-    def save_results(self, path="results.pkl"):
+    
+
+    def save_results(self, path=None):
         try:
+            # 🔹 default path = same folder as database
+            if path is None:
+                db_path = db.get_default_db_path()
+                base_dir = os.path.dirname(db_path)
+                path = os.path.join(base_dir, "results.pkl")
+
             if os.path.exists(path):
                 with open(path, "rb") as f:
                     old_data = pickle.load(f)
@@ -439,12 +447,20 @@ class ScanPage:
             self.last_processed_times = old_times
 
             print(f"✅ Results saved to {os.path.abspath(path)}")
+
         except Exception as e:
             print(f"❌ Error saving results: {e}")
 
 
+
      
-    def load_results(self, path="results.pkl"):
+    def load_results(self, path=None):
+        # 🔹 default path = same folder as database
+        if path is None:
+            db_path = db.get_default_db_path()
+            base_dir = os.path.dirname(db_path)
+            path = os.path.join(base_dir, "results.pkl")
+
         if not os.path.exists(path):
             print("⚠️ No saved results found.")
             self.processed_results = {}

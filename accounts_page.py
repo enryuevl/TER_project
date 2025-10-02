@@ -2,7 +2,9 @@ from customtkinter import *
 from tkinter import ttk, messagebox, filedialog
 import db
 import pandas as pd
-
+import datetime
+from db import backup_all
+import shutil
 
 class AccountsDatabasePage:
     def __init__(self, master):
@@ -36,7 +38,7 @@ class AccountsDatabasePage:
         self.controls_frame.pack(fill="x", pady=(10, 0))
 
         # Tab buttons
-        for i, entity in enumerate(["Faculty", "Departments", "Blocks"]):
+        for i, entity in enumerate(["Faculty", "Departments", "Blocks", "Teaching Assignments"]):
             btn = CTkButton(
                 self.tab_frame, text=entity,
                 command=lambda e=entity: self.show_tab(e),
@@ -74,11 +76,22 @@ class AccountsDatabasePage:
                                 fg_color="#F8F9FA", width=200, height=32)
         search_entry.pack(side="right", padx=(0, 10))
 
-        export_btn = CTkButton(header_frame, text="Export CSV",
-                               command=lambda: self.export_table_data(name),
-                               fg_color="#691612", hover_color="#AC5353",
-                               text_color="#FFFFFF", width=120, height=32)
-        export_btn.pack(side="right", padx=10)
+        backup_btn = CTkButton(
+        header_frame, text="Backup Database",
+        command=self.backup_database,
+        fg_color="#691612", hover_color="#AC5353",
+        text_color="#FFFFFF", width=160, height=32
+    )
+        backup_btn.pack(side="right", padx=10)
+
+        restore_btn = CTkButton(
+        header_frame, text="Load Backup",
+        command=self.load_backup,
+        fg_color="#3182CE", hover_color="#2563EB",
+        text_color="#FFFFFF", width=160, height=32
+    )
+        restore_btn.pack(side="right", padx=10)
+
 
         # Table
         table_container = CTkFrame(self.content_frame, fg_color="transparent")
@@ -87,8 +100,10 @@ class AccountsDatabasePage:
         table_loaders = {
             "Faculty": self.show_faculty_table,
             "Departments": self.show_departments_table,
-            "Blocks": self.show_blocks_table
+            "Blocks": self.show_blocks_table,
+            "Teaching Assignments": self.show_teaching_assignments_table
         }
+
         table_loaders[name](table_container, search_entry)
 
         # Controls
@@ -119,7 +134,8 @@ class AccountsDatabasePage:
         builders = {
             "Faculty": self.build_faculty_form,
             "Departments": self.build_department_form,
-            "Blocks": self.build_block_form
+            "Blocks": self.build_block_form,
+            "Teaching Assignments": self.build_teaching_assignment_form
         }
         builders[entity](self.sidepanel, mode)
 
@@ -210,6 +226,44 @@ class AccountsDatabasePage:
 
         search_entry.bind("<KeyRelease>", lambda e: load_data(search_entry.get()))
         load_data()
+
+    def show_teaching_assignments_table(self, container, search_entry):
+        self._setup_treeview(container,
+            columns=("ID", "Subject Code", "Subject Name", "Block", "Professor", "Students"),
+            headings=("ID", "Code", "Subject Name", "Block", "Professor", "Students"),
+            col_widths=(50, 100, 250, 150, 200, 100))
+
+        def load_data(term=None):
+            self.tree.delete(*self.tree.get_children())
+            query = """
+                SELECT 
+                    ta.id,
+                    s.code AS subject_code,
+                    s.name AS subject_name,
+                    b.year_level || b.section || ' (' || b.academic_year || ' ' || b.semester || ')' AS block_label,
+                    COALESCE(f.full_name, 'TBA') AS professor,
+                    b.num_students AS students
+                FROM teaching_assignments ta
+                JOIN subjects s ON ta.subject_id = s.id
+                JOIN blocks b ON ta.block_id = b.id
+                LEFT JOIN faculty f ON ta.faculty_id = f.id
+            """
+            params = ()
+            if term:
+                query += """ 
+                    WHERE s.code LIKE ? OR s.name LIKE ? 
+                    OR f.full_name LIKE ? OR b.section LIKE ?
+                """
+                params = (f"%{term}%", f"%{term}%", f"%{term}%", f"%{term}%")
+            query += " ORDER BY s.code, b.year_level, b.section"
+
+            with db.connect() as conn:
+                for row in conn.execute(query, params).fetchall():
+                    self.tree.insert("", "end", values=row)
+
+        search_entry.bind("<KeyRelease>", lambda e: load_data(search_entry.get()))
+        load_data()
+
 
     # ---------------- Delete ---------------- #
     def delete_selected(self):
@@ -386,6 +440,24 @@ class AccountsDatabasePage:
         section_menu.pack(fill="x", padx=20, pady=5)
         section_var.set("A")  # default
 
+        # School Year entry (e.g. "2024-2025")
+        sy_entry = CTkEntry(parent, placeholder_text="Academic Year (e.g. 2024-2025)")
+        sy_entry.pack(fill="x", padx=20, pady=5)
+
+        # Semester is determined automatically
+        sem_var = StringVar()
+        month = datetime.datetime.now().month
+        if 8 <= month <= 12:
+            sem_var.set("1st")
+        elif 1 <= month <= 6:
+            sem_var.set("2nd")
+        else:
+            sem_var.set("Summer")  # Optional rule for July
+
+        sem_label = CTkLabel(parent, text=f"Semester: {sem_var.get()}",
+                            font=("Arial", 14), text_color="#333333")
+        sem_label.pack(pady=5)
+
         # Number of students entry
         num_students_entry = CTkEntry(parent, placeholder_text="Number of Students")
         num_students_entry.pack(fill="x", padx=20, pady=5)
@@ -398,38 +470,218 @@ class AccountsDatabasePage:
                 self.sidepanel.destroy()
                 return
             record = self.tree.item(selected[0], "values")
-            record_id, year, section, num_students = record
+            record_id, year, section, num_students = record[:4]
             year_var.set(str(year))
             section_var.set(section)
             num_students_entry.insert(0, num_students)
+            # if you add school year + sem to tree columns, preload them here too
 
         def submit():
             try:
-                # Validate num_students as integer
+                # Validate num_students
                 try:
                     num_students = int(num_students_entry.get().strip())
                 except ValueError:
                     messagebox.showerror("Invalid Input", "Number of students must be an integer.")
                     return
 
+                academic_year = sy_entry.get().strip()
+                if not academic_year:
+                    messagebox.showerror("Invalid Input", "Academic year cannot be empty.")
+                    return
+
                 with db.connect() as conn:
                     if mode == "add":
-                        conn.execute(
-                            "INSERT INTO blocks (year_level, section, num_students) VALUES (?,?,?)",
-                            (int(year_var.get()), section_var.get(), num_students)
-                        )
+                        # Insert the block
+                        cursor = conn.execute("""
+                            INSERT INTO blocks (year_level, section, academic_year, semester, num_students)
+                            VALUES (?,?,?,?,?)
+                        """, (int(year_var.get()), section_var.get(), academic_year, sem_var.get(), num_students))
+                        block_id = cursor.lastrowid
+
+                        # Auto-create teaching assignments (faculty = NULL / TBA)
+                        subjects = conn.execute("""
+                            SELECT id FROM subjects 
+                            WHERE year_level=? AND semester=?
+                        """, (int(year_var.get()), sem_var.get())).fetchall()
+
+                        for subj in subjects:
+                            conn.execute("""
+                                INSERT INTO teaching_assignments (faculty_id, subject_id, block_id)
+                                VALUES (NULL, ?, ?)
+                            """, (subj[0], block_id))
+
                     else:
-                        conn.execute(
-                            "UPDATE blocks SET year_level=?, section=?, num_students=? WHERE id=?",
-                            (int(year_var.get()), section_var.get(), num_students, record_id)
-                        )
+                        # Update existing block
+                        conn.execute("""
+                            UPDATE blocks 
+                            SET year_level=?, section=?, academic_year=?, semester=?, num_students=? 
+                            WHERE id=?
+                        """, (int(year_var.get()), section_var.get(), academic_year, sem_var.get(), num_students, record_id))
+
                     conn.commit()
+
                 self.sidepanel.destroy()
                 self.show_tab("Blocks")
             except Exception as e:
                 messagebox.showerror("DB Error", str(e))
+        CTkButton(parent, text="Save", fg_color="#691612", command=submit).pack(pady=20)
+
+    def build_teaching_assignment_form(self, parent, mode):
+        CTkLabel(parent, text="Teaching Assignment Form", font=("Arial", 18, "bold"),
+                text_color="#691612").pack(pady=10)
+
+        # Faculty dropdown (from faculty table)
+        faculty_var = StringVar()
+        faculty_options = ["TBA"]
+        faculty_map = {"TBA": None}
+        with db.connect() as conn:
+            rows = conn.execute("SELECT id, full_name FROM faculty ORDER BY full_name").fetchall()
+            for fid, fname in rows:
+                faculty_options.append(fname)
+                faculty_map[fname] = fid
+
+        faculty_menu = CTkOptionMenu(parent, variable=faculty_var, values=faculty_options)
+        faculty_menu.pack(fill="x", padx=20, pady=5)
+        faculty_var.set("TBA")
+
+        # Subject dropdown (will be disabled in edit mode)
+        subject_var = StringVar()
+        subject_options = []
+        subject_map = {}
+        with db.connect() as conn:
+            rows = conn.execute("SELECT id, code || ' - ' || name FROM subjects ORDER BY code").fetchall()
+            for sid, label in rows:
+                subject_options.append(label)
+                subject_map[label] = sid
+        subject_menu = CTkOptionMenu(parent, variable=subject_var, values=subject_options)
+        subject_menu.pack(fill="x", padx=20, pady=5)
+        if subject_options:
+            subject_var.set(subject_options[0])
+
+        # Block dropdown (will be disabled in edit mode)
+        block_var = StringVar()
+        block_options = []
+        block_map = {}
+        with db.connect() as conn:
+            rows = conn.execute("""
+                SELECT id, year_level || section || ' (' || academic_year || ' ' || semester || ')' 
+                FROM blocks ORDER BY year_level, section
+            """).fetchall()
+            for bid, label in rows:
+                block_options.append(label)
+                block_map[label] = bid
+        block_menu = CTkOptionMenu(parent, variable=block_var, values=block_options)
+        block_menu.pack(fill="x", padx=20, pady=5)
+        if block_options:
+            block_var.set(block_options[0])
+
+        record_id = None
+        if mode == "edit" and self.tree:
+            selected = self.tree.selection()
+            if not selected:
+                messagebox.showwarning("No selection", "Select a teaching assignment to edit.")
+                self.sidepanel.destroy()
+                return
+
+            record = self.tree.item(selected[0], "values")
+            record_id = record[0]  # ✅ always reference the assignment ID
+
+            with db.connect() as conn:
+                row = conn.execute("""
+                    SELECT ta.faculty_id, ta.subject_id, ta.block_id, f.full_name
+                    FROM teaching_assignments ta
+                    LEFT JOIN faculty f ON ta.faculty_id = f.id
+                    WHERE ta.id = ?
+                """, (record_id,)).fetchone()
+
+                if row:
+                    fac_id, subj_id, blk_id, fac_name = row
+
+                    # Pre-fill professor
+                    faculty_var.set(fac_name if fac_name else "TBA")
+
+                    # Pre-fill subject (but lock dropdown)
+                    for k, v in subject_map.items():
+                        if v == subj_id:
+                            subject_var.set(k)
+                            break
+                    subject_menu.configure(state="disabled")
+
+                    # Pre-fill block (but lock dropdown)
+                    for k, v in block_map.items():
+                        if v == blk_id:
+                            block_var.set(k)
+                            break
+                    block_menu.configure(state="disabled")
+
+        def submit():
+            try:
+                faculty_id = faculty_map.get(faculty_var.get())  # can be None (TBA)
+
+                with db.connect() as conn:
+                    if mode == "add":
+                        # Add new assignment
+                        conn.execute("""
+                            INSERT INTO teaching_assignments (faculty_id, subject_id, block_id)
+                            VALUES (?, ?, ?)
+                        """, (
+                            faculty_id,
+                            subject_map[subject_var.get()],
+                            block_map[block_var.get()]
+                        ))
+                    else:
+                        # ✅ Update only the professor for this assignment ID
+                        conn.execute("""
+                            UPDATE teaching_assignments 
+                            SET faculty_id=? 
+                            WHERE id=?
+                        """, (faculty_id, record_id))
+                    conn.commit()
+
+                self.sidepanel.destroy()
+                self.show_tab("Teaching Assignments")  # refresh table
+
+            except Exception as e:
+                messagebox.showerror("DB Error", str(e))
+
+        CTkButton(parent, text="Save", fg_color="#691612", command=submit).pack(pady=20)
 
 
-        CTkButton(parent, text="Save", fg_color="#691612",
-                command=submit).pack(pady=20)
+    #backup function
+    def backup_database(self):
+        try:
+            backup_dir = db.backup_all()  # calls your db.py backup_all()
+            messagebox.showinfo("Backup Successful", f"Backup saved in:\n{backup_dir}")
+        except Exception as e:
+            messagebox.showerror("Backup Failed", str(e))
+
+    def load_backup(self):
+        try:
+            file_path = filedialog.askopenfilename(
+                title="Select Backup File",
+                filetypes=[("Backup Files", "*.sqlite *.pkl"), ("All Files", "*.*")]
+            )
+            if not file_path:
+                return  # cancelled
+
+            documents_folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork")
+
+            if file_path.endswith(".sqlite"):
+                target = os.path.join(documents_folder, "ter_db2.sqlite")
+            elif file_path.endswith(".pkl"):
+                target = os.path.join(documents_folder, "results.pkl")
+            else:
+                messagebox.showerror("Invalid File", "Please select a .sqlite or .pkl backup file.")
+                return
+
+            shutil.copy2(file_path, target)
+            messagebox.showinfo("Restore Successful", f"Backup restored from:\n{file_path}")
+
+            # 🔄 refresh UI after restore
+            self.show_tab(self.current_tab)
+
+        except Exception as e:
+            messagebox.showerror("Restore Failed", str(e))
+
 
