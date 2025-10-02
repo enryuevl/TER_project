@@ -39,16 +39,50 @@ CREATE TABLE IF NOT EXISTS faculty (
         TRIM(
             first_name || ' ' ||
             COALESCE(middle_name || ' ', '') ||
-            last_name || 
-            CASE 
-                WHEN suffix IS NOT NULL AND suffix != '' THEN ' ' || suffix 
+            last_name ||
+            CASE
+                WHEN suffix IS NOT NULL AND suffix != '' THEN ' ' || suffix
                 ELSE '' 
             END
         )
     ) STORED,
     FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS subjects (
+    id INTEGER PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,              
+    name TEXT NOT NULL,                     
+    year_level INTEGER NOT NULL CHECK(year_level >= 1 AND year_level <= 4),  
+    semester TEXT NOT NULL CHECK(semester IN ('1st', '2nd', 'Summer')),  
+    department_id INTEGER,                  
+    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS blocks (
+    id INTEGER PRIMARY KEY,
+    year_level INTEGER NOT NULL CHECK(year_level >= 1 AND year_level <= 4),
+    section TEXT NOT NULL,
+    academic_year TEXT NOT NULL,  -- e.g. "2024-2025"
+    semester TEXT NOT NULL CHECK(semester IN ('1st','2nd','Summer')),
+    num_students INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(year_level, section, academic_year, semester)
+);
+
+CREATE TABLE IF NOT EXISTS teaching_assignments (
+    id INTEGER PRIMARY KEY,
+    faculty_id INTEGER NOT NULL,
+    subject_id INTEGER NOT NULL,
+    block_id INTEGER NOT NULL,
+    FOREIGN KEY (faculty_id) REFERENCES faculty(id) ON DELETE CASCADE,
+    FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
+    FOREIGN KEY (block_id) REFERENCES blocks(id) ON DELETE CASCADE
+);
 """
+
+
+
+
 
 
 
