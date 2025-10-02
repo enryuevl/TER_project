@@ -52,7 +52,7 @@ icons = {
     "Scan": "scan.png",
     "Print": "print.png",
     "Results": "results.png",
-    "Accounts": "accounts.png",
+    "Database": "accounts.png",
     "Logout": "logout.png"
 }
 
@@ -142,7 +142,7 @@ nav_actions = {
     "Scan": lambda: ScanPage(main_frame, processed_results),
     "Dean": lambda: DeanEvaluationForm(main_frame, processed_results),
     "Results": lambda: ResultsPage(main_frame, processed_results),
-    "Accounts": lambda: AccountsDatabasePage(main_frame), 
+    "Database": lambda: AccountsDatabasePage(main_frame), 
     
 }
 
