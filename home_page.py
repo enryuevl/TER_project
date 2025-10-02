@@ -36,10 +36,9 @@ class HomePage:
         stats_frame.pack(fill="x", pady=(0, 20))
 
         cards = [
-            {"title": "Total Forms", "value": 847, "change": "+12% this week", "color": "#22C55E"},
-            {"title": "Teachers Evaluated", "value": 42, "change": "+7% this week", "color": "#22C55E"},
-            {"title": "Average Score", "value": 8.7, "change": "+3% this week", "color": "#22C55E"},
-            {"title": "Pending Reviews", "value": 12, "change": "-5% this week", "color": "#EF4444"},
+            {"title": "Total Forms", "value": 847},
+            {"title": "Teachers Evaluated", "value": 42},
+            {"title": "Average Score", "value": 8.7},
         ]
 
         for card in cards:
@@ -49,7 +48,6 @@ class HomePage:
 
             CTkLabel(frame, text=card["title"], font=("Poppins", 14, "bold"), text_color="#691612").pack(pady=(10, 5))
             CTkLabel(frame, text=str(card["value"]), font=("Poppins", 28, "bold"), text_color="#212529").pack()
-            CTkLabel(frame, text=card["change"], font=("Poppins", 12), text_color=card["color"]).pack(pady=(5, 0))
 
     # ---------------- REPORTS SECTION ----------------
     def _build_reports(self, parent):
@@ -68,7 +66,7 @@ class HomePage:
         filter_frame.pack(fill="x", padx=20, pady=(0, 10))
 
         dept_menu = CTkOptionMenu(filter_frame,
-                                  values=["All Departments", "BSIT", "BSIS", "BSOA"],
+                                  values=["All Departments"],
                                   fg_color="#F1F3F5", button_color="#E9ECEF",
                                   button_hover_color="#DDE2E6", text_color="#495057",
                                   dropdown_fg_color="#FFFFFF", width=150)
@@ -118,7 +116,7 @@ class HomePage:
         year_menu.set("2025")
 
         dept_menu = CTkOptionMenu(filter_frame,
-                                  values=["All Departments", "BSIT", "BSIS", "BSOA"],
+                                  values=["All Departments"],
                                   fg_color="#F1F3F5", button_color="#E9ECEF",
                                   button_hover_color="#DDE2E6", text_color="#495057",
                                   dropdown_fg_color="#FFFFFF", width=150)

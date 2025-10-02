@@ -50,7 +50,7 @@ except:
 icons = {
     "Dashboard": "dashboard.png",
     "Scan": "scan.png",
-    "Print": "print.png",
+    "Admin": "admin.png",
     "Results": "results.png",
     "Database": "accounts.png",
     "Logout": "logout.png"
@@ -140,7 +140,7 @@ sidebar_buttons = {}
 nav_actions = {
     "Dashboard": lambda: HomePage(main_frame),
     "Scan": lambda: ScanPage(main_frame, processed_results),
-    "Dean": lambda: DeanEvaluationForm(main_frame, processed_results),
+    "Admin": lambda: DeanEvaluationForm(main_frame, processed_results),
     "Results": lambda: ResultsPage(main_frame, processed_results),
     "Database": lambda: AccountsDatabasePage(main_frame), 
     
