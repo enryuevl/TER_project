@@ -58,22 +58,38 @@ class ResultsPage:
         for teacher in self.processed_results.keys():
             if not first_teacher:
                 first_teacher = teacher
-            btn = CTkButton(self.tab_frame, text=teacher,
-                            command=lambda t=teacher: self.show_teacher(t),
-                            fg_color="#AC5353", hover_color="#BF3131",
-                            text_color="#FFFFFF", width=160, height=35, corner_radius=8)
+            btn = CTkButton(
+                self.tab_frame,
+                text=teacher,
+                command=lambda t=teacher: self.show_teacher(t),
+                fg_color="#AC5353",          # default inactive color
+                hover_color="#8B1D18",       # Dark Red hover for inactive
+                text_color="#333333",
+                width=160, height=35, corner_radius=8
+            )
             btn.pack(side="left", padx=5)
             self.tab_buttons[teacher] = btn
 
         if first_teacher:
             self.show_teacher(first_teacher)
 
+
     def show_teacher(self, teacher):
         self.current_teacher = teacher
-        # Reset tab highlight
+        # Reset tab highlight with proper palette alignment
         for t, btn in self.tab_buttons.items():
-            btn.configure(fg_color="#AC5353" if t == teacher else "#F1F3F5",
-                          text_color="#FFFFFF" if t == teacher else "#333333")
+            if t == teacher:
+                btn.configure(
+                    fg_color="#691612",    # Dark Crimson active
+                    text_color="#FFFFFF",  # White text active
+                    hover_color="#BF3131"  # Crimson hover active
+                )
+            else:
+                btn.configure(
+                    fg_color="#AC5353",    # Muted Red inactive
+                    text_color="#333333",  # Dark text inactive
+                    hover_color="#8B1D18"  # Dark Red hover inactive
+                )
 
         # Build rater dropdown + table
         for w in self.content_frame.winfo_children():

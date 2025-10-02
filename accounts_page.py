@@ -52,18 +52,27 @@ class AccountsDatabasePage:
 
         self.show_tab("Faculty")
 
-    # ---------------- Tabs ---------------- #
+  # ---------------- Tabs ---------------- #
     def show_tab(self, name):
         self.current_tab = name
-        # highlight selected tab
+        # highlight selected tab with red palette alignment
         for tab, btn in self.tab_buttons.items():
-            btn.configure(
-                fg_color="#AC5353" if tab == name else "#F1F3F5",
-                text_color="#FFFFFF" if tab == name else "#333333"
-            )
+            if tab == name:
+                btn.configure(
+                    fg_color="#691612",    # Dark Crimson active
+                    text_color="#FFFFFF",  # White text active
+                    hover_color="#BF3131"  # Crimson hover active
+                )
+            else:
+                btn.configure(
+                    fg_color="#AC5353",    # Muted Red inactive
+                    text_color="#333333",  # Dark text inactive
+                    hover_color="#8B1D18"  # Dark Red hover inactive
+                )
 
         for w in self.content_frame.winfo_children():
             w.destroy()
+
 
         # Header
         header_frame = CTkFrame(self.content_frame, fg_color="transparent")
@@ -148,24 +157,81 @@ class AccountsDatabasePage:
         }
         builders[entity](self.sidepanel, mode)
 
-    # ---------------- Tables ---------------- #
+ # ---------------- Tables ---------------- #
     def _setup_treeview(self, container, columns, headings, col_widths):
-        style = ttk.Style()
-        style.configure("Treeview", background="#FFFFFF", foreground="#333333", rowheight=30)
-        style.configure("Treeview.Heading", background="#F8F9FA",
-                        foreground="#691612", font=("Arial", 12, "bold"))
+        # Create a frame to hold the tree and scrollbars
+        frame = CTkFrame(container, fg_color="transparent")
+        frame.pack(fill="both", expand=True)
 
-        tree_scroll = CTkScrollbar(container, orientation="vertical")
-        tree_scroll.pack(side="right", fill="y")
+        # Scrollbars (horizontal + vertical)
+        x_scroll = CTkScrollbar(frame, orientation="horizontal")
+        x_scroll.pack(side="bottom", fill="x")
+        y_scroll = CTkScrollbar(frame, orientation="vertical")
+        y_scroll.pack(side="right", fill="y")
 
-        self.tree = ttk.Treeview(container, columns=columns,
-                                 show="headings", yscrollcommand=tree_scroll.set)
-        tree_scroll.configure(command=self.tree.yview)
+        # Treeview widget
+        self.tree = ttk.Treeview(
+            frame,
+            columns=columns,
+            show="headings",
+            xscrollcommand=x_scroll.set,
+            yscrollcommand=y_scroll.set,
+            height=20
+        )
         self.tree.pack(fill="both", expand=True)
 
+        # Connect scrollbars
+        x_scroll.configure(command=self.tree.xview)
+        y_scroll.configure(command=self.tree.yview)
+
+        # ---------- Styling ----------
+        style = ttk.Style()
+        style.theme_use("default")
+
+        # Base row style
+        style.configure(
+            "Treeview",
+            font=("Arial", 11),
+            rowheight=30,
+            background="#F3F4F6",   # soft gray background
+            foreground="#1F2937"    # neutral dark text
+        )
+
+        # Heading style (Crimson)
+        style.configure(
+            "Treeview.Heading",
+            font=("Arial", 12, "bold"),
+            foreground="#FFFFFF",
+            background="#BF3131"   # Crimson header
+        )
+
+        # Hover + selection colors
+        style.map(
+            "Treeview",
+            background=[("selected", "#AC5353")],  # Muted Red
+            foreground=[("selected", "#FFFFFF")]
+        )
+        style.map(
+            "Treeview.Heading",
+            background=[("hover", "#AC5353")],
+            foreground=[("hover", "#FFFFFF")]
+        )
+
+        # Define row tags
+        self.tree.tag_configure("oddrow", background="#F3F4F6", foreground="#1F2937")
+        self.tree.tag_configure("evenrow", background="#EBE8DB", foreground="#1F2937")
+        self.tree.tag_configure(
+            "section",
+            background="#BF3131",  # Crimson
+            foreground="#FFFFFF",
+            font=("Arial", 12, "bold")
+        )
+
+        # Set up headings & column widths
         for col, heading, width in zip(columns, headings, col_widths):
             self.tree.heading(col, text=heading)
             self.tree.column(col, width=width, anchor="center" if col == "ID" else "w")
+
 
     def show_faculty_table(self, container, search_entry):
         self._setup_treeview(container,
