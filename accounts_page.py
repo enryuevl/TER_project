@@ -25,7 +25,7 @@ class AccountsDatabasePage:
         self.container.pack(fill="both", expand=True, padx=20, pady=20)
 
         CTkLabel(self.container, text="Faculty, Departments & Blocks Manager",
-                 font=("Arial", 24, "bold"), text_color="#691612").pack(pady=(0, 20))
+                 font=("Arial", 24, "bold"), text_color="#691612").pack(pady=(0, 20))  # Dark Crimson
 
         # Tabs
         self.tab_frame = CTkFrame(self.container, fg_color="transparent")
@@ -42,9 +42,9 @@ class AccountsDatabasePage:
             btn = CTkButton(
                 self.tab_frame, text=entity,
                 command=lambda e=entity: self.show_tab(e),
-                fg_color="#AC5353" if i == 0 else "#F1F3F5",
+                fg_color="#AC5353" if i == 0 else "#F1F3F5",        # Muted Red active, gray inactive
                 text_color="#FFFFFF" if i == 0 else "#333333",
-                hover_color="#BF3131" if i == 0 else "#E9ECEF",
+                hover_color="#BF3131" if i == 0 else "#E9ECEF",      # Crimson active hover, gray hover inactive
                 width=160, height=35, corner_radius=8
             )
             btn.pack(side="left", padx=5)
@@ -58,7 +58,7 @@ class AccountsDatabasePage:
         # highlight selected tab
         for tab, btn in self.tab_buttons.items():
             btn.configure(
-                fg_color="#AC5353" if tab == name else "#F1F3F5",
+                fg_color="#AC5353" if tab == name else "#F1F3F5",    # Muted Red for active tab
                 text_color="#FFFFFF" if tab == name else "#333333"
             )
 
@@ -70,28 +70,27 @@ class AccountsDatabasePage:
         header_frame.pack(fill="x", padx=20, pady=10)
 
         CTkLabel(header_frame, text=f"{name} Table",
-                 font=("Arial", 20, "bold"), text_color="#691612").pack(side="left")
+                 font=("Arial", 20, "bold"), text_color="#691612").pack(side="left")  # Dark Crimson
 
         search_entry = CTkEntry(header_frame, placeholder_text="Search...",
                                 fg_color="#F8F9FA", width=200, height=32)
         search_entry.pack(side="right", padx=(0, 10))
 
         backup_btn = CTkButton(
-        header_frame, text="Backup Database",
-        command=self.backup_database,
-        fg_color="#691612", hover_color="#AC5353",
-        text_color="#FFFFFF", width=160, height=32
-    )
+            header_frame, text="Backup Database",
+            command=self.backup_database,
+            fg_color="#691612", hover_color="#BF3131",  # Dark Crimson, Crimson hover
+            text_color="#FFFFFF", width=160, height=32
+        )
         backup_btn.pack(side="right", padx=10)
 
         restore_btn = CTkButton(
-        header_frame, text="Load Backup",
-        command=self.load_backup,
-        fg_color="#3182CE", hover_color="#2563EB",
-        text_color="#FFFFFF", width=160, height=32
-    )
+            header_frame, text="Load Backup",
+            command=self.load_backup,
+            fg_color="#BF3131", hover_color="#8B1D18",  # Crimson, Dark Red hover
+            text_color="#FFFFFF", width=160, height=32
+        )
         restore_btn.pack(side="right", padx=10)
-
 
         # Table
         table_container = CTkFrame(self.content_frame, fg_color="transparent")
@@ -109,7 +108,7 @@ class AccountsDatabasePage:
         # Controls
         for w in self.controls_frame.winfo_children():
             w.destroy()
-        for label, color in [("Add", "#2C7A7B"), ("Edit", "#3182CE"), ("Delete", "#E53E3E")]:
+        for label, color in [("Add", "#2C7A7B"), ("Edit", "#BF3131"), ("Delete", "#B22222")]:  # changed to palette
             CTkButton(
                 self.controls_frame, text=f"{label} {name[:-1]}",
                 fg_color=color,
