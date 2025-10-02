@@ -107,91 +107,96 @@ class ResultsPage:
             self.build_table(rater_options[0])
 
 
+
     # ---------------- Table ---------------- #
     def build_table(self, rater_type):
-        self.current_rater = rater_type
-        for w in self.table_container.winfo_children():
-            w.destroy()
+            self.current_rater = rater_type
+            for w in self.table_container.winfo_children():
+                w.destroy()
 
-        data = self.processed_results[self.current_teacher].get(rater_type, [])
-        if not data:
-            CTkLabel(self.table_container, text="No results available",
-                    font=("Arial", 14), text_color="#374151").pack(pady=20)
-            return
+            data = self.processed_results[self.current_teacher].get(rater_type, [])
+            if not data:
+                CTkLabel(self.table_container, text="No results available",
+                        font=("Arial", 14), text_color="#1F2937").pack(pady=20)
+                return
 
-        # ---------- Section Titles ----------
-        section_titles = {
-            "Section 1": "I. Commitment",
-            "Section 2": "II. Knowledge of Subject",
-            "Section 3": "III. Teaching for Independent Learning",
-            "Section 4": "IV. Management of Learning"
-        }
+            # ---------- Section Titles ----------
+            section_titles = {
+                "Section 1": "I. Commitment",
+                "Section 2": "II. Knowledge of Subject",
+                "Section 3": "III. Teaching for Independent Learning",
+                "Section 4": "IV. Management of Learning"
+            }
 
-        # ---------- Headers ----------
-        headers = ["Question"]
-        for idx, (fname, result, *_) in enumerate(data):
-            headers.append(f"{fname}")
+            # ---------- Headers ----------
+            headers = ["Question"]
+            for idx, (fname, result, *_) in enumerate(data):
+                headers.append(f"{fname}")
 
-        # ---------- Collect rows ----------
-        table_data = []
-        sections = sorted({sec for _, result, *_ in data for sec in result.keys()})
-        for sec in sections:
-            # Section header row (mapped title)
-            title = section_titles.get(sec, sec)
-            table_data.append([title] + [""] * len(data))
+            # ---------- Collect rows ----------
+            table_data = []
+            sections = sorted({sec for _, result, *_ in data for sec in result.keys()})
+            for sec in sections:
+                # Section header row (mapped title)
+                title = section_titles.get(sec, sec)
+                table_data.append([title] + [""] * len(data))
 
-            # Row items under each section
-            max_rows = max(len(result.get(sec, {})) for _, result, *_ in data)
-            for rownum in range(1, max_rows + 1):
-                row = [f"{rownum}"]  # just show row number under section
-                for _, result, *_ in data:
-                    score = result.get(sec, {}).get(rownum, "")
-                    row.append(score)
-                table_data.append(row)
+                # Row items under each section
+                max_rows = max(len(result.get(sec, {})) for _, result, *_ in data)
+                for rownum in range(1, max_rows + 1):
+                    row = [f"{rownum}"]  # just show row number under section
+                    for _, result, *_ in data:
+                        score = result.get(sec, {}).get(rownum, "")
+                        row.append(score)
+                    table_data.append(row)
 
-        # ---------- Treeview ----------
-        frame = CTkFrame(self.table_container, fg_color="transparent")
-        frame.pack(fill="both", expand=True)
+            # ---------- Treeview ----------
+            frame = CTkFrame(self.table_container, fg_color="transparent")
+            frame.pack(fill="both", expand=True)
 
-        x_scroll = CTkScrollbar(frame, orientation="horizontal")
-        x_scroll.pack(side="bottom", fill="x")
-        y_scroll = CTkScrollbar(frame, orientation="vertical")
-        y_scroll.pack(side="right", fill="y")
+            x_scroll = CTkScrollbar(frame, orientation="horizontal")
+            x_scroll.pack(side="bottom", fill="x")
+            y_scroll = CTkScrollbar(frame, orientation="vertical")
+            y_scroll.pack(side="right", fill="y")
 
-        self.tree = ttk.Treeview(frame, columns=headers, show="headings",
-                                xscrollcommand=x_scroll.set,
-                                yscrollcommand=y_scroll.set, height=20)
-        self.tree.pack(fill="both", expand=True)
+            self.tree = ttk.Treeview(frame, columns=headers, show="headings",
+                                    xscrollcommand=x_scroll.set,
+                                    yscrollcommand=y_scroll.set, height=20)
+            self.tree.pack(fill="both", expand=True)
 
-        x_scroll.configure(command=self.tree.xview)
-        y_scroll.configure(command=self.tree.yview)
+            x_scroll.configure(command=self.tree.xview)
+            y_scroll.configure(command=self.tree.yview)
 
-        # ---------- Styling ----------
-        style = ttk.Style()
-        style.configure("Treeview", font=("Arial", 11), rowheight=28)
-        style.configure("Treeview.Heading", font=("Arial", 12, "bold"), foreground="#691612")
+            # ---------- Styling ----------
+            style = ttk.Style()
+            # Configure base Treeview style with improved font and row height
+            style.configure("Treeview", font=("Arial", 11), rowheight=30, background="#F3F4F6", foreground="#1F2937")
+            # Configure heading style with specified Crimson (#BF3131)
+            style.configure("Treeview.Heading", font=("Arial", 12, "bold"), foreground="#FFFFFF", background="#BF3131")
+            # Customize hover and selected states with Muted Red (#AC5353)
+            style.map("Treeview", background=[("selected", "#AC5353")], foreground=[("selected", "#FFFFFF")])
+            style.map("Treeview.Heading", background=[("hover", "#AC5353")], foreground=[("hover", "#FFFFFF")])
 
-        self.tree.tag_configure("oddrow", background="#FFFFFF")
-        self.tree.tag_configure("evenrow", background="#F9FAFB")
-        self.tree.tag_configure("section", background="#F3F4F6",
+            # Define row tags with a single body color
+            self.tree.tag_configure("oddrow", background="#F3F4F6", foreground="#1F2937")
+            self.tree.tag_configure("evenrow", background="#F3F4F6", foreground="#1F2937")
+            self.tree.tag_configure("section", background="#BF3131", foreground="#FFFFFF", 
                                 font=("Arial", 12, "bold"))
 
-        # ---------- Insert Data ----------
-        for h in headers:
-            self.tree.heading(h, text=h)
-            self.tree.column(h, width=120, anchor="center")
+            # ---------- Insert Data ----------
+            for h in headers:
+                self.tree.heading(h, text=h)
+                self.tree.column(h, width=120, anchor="center")
 
-        section_row_index = 0
-        for row in table_data:
-            if row[0].startswith(("I.", "II.", "III.", "IV.")):
-                self.tree.insert("", "end", values=row, tags=("section",))
-                section_row_index = 0
-            else:
-                tag = "evenrow" if section_row_index % 2 == 0 else "oddrow"
-                self.tree.insert("", "end", values=row, tags=(tag,))
-                section_row_index += 1
-
-
+            section_row_index = 0
+            for row in table_data:
+                if row[0].startswith(("I.", "II.", "III.", "IV.")):
+                    self.tree.insert("", "end", values=row, tags=("section",))
+                    section_row_index = 0
+                else:
+                    tag = "evenrow" if section_row_index % 2 == 0 else "oddrow"
+                    self.tree.insert("", "end", values=row, tags=(tag,))
+                    section_row_index += 1
 
 
 # ---------------- Controls ---------------- #
