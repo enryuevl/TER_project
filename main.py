@@ -174,7 +174,7 @@ def set_sidebar_state(state="normal"):
                 pass
              
 # Render the home page by default
-HomePage(main_frame)
+ScanPage(main_frame, processed_results)
 
 
 def toggle_fullscreen(event=None):
