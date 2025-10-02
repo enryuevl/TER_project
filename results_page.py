@@ -36,7 +36,7 @@ class ResultsPage:
         self.container.pack(fill="both", expand=True, padx=20, pady=20)
 
         CTkLabel(self.container, text="Evaluation Results",
-                 font=("Arial", 24, "bold"), text_color="#691612").pack(pady=(0, 20))
+                 font=("Poppins", 24, "bold"), text_color="#691612").pack(pady=(0, 20))
 
         # Tabs: teachers
         self.tab_frame = CTkFrame(self.container, fg_color="transparent")
@@ -99,7 +99,7 @@ class ResultsPage:
         header_frame.pack(fill="x", padx=20, pady=10)
 
         CTkLabel(header_frame, text=f"Results for {teacher}",
-                 font=("Arial", 20, "bold"), text_color="#691612").pack(side="left")
+                 font=("Poppins", 20, "bold"), text_color="#691612").pack(side="left")
 
         rater_options = list(self.processed_results[teacher].keys())
         self.rater_var = StringVar(value=rater_options[0])
@@ -133,7 +133,7 @@ class ResultsPage:
             data = self.processed_results[self.current_teacher].get(rater_type, [])
             if not data:
                 CTkLabel(self.table_container, text="No results available",
-                        font=("Arial", 14), text_color="#1F2937").pack(pady=20)
+                        font=("Poppins", 14), text_color="#1F2937").pack(pady=20)
                 return
 
             # ---------- Section Titles ----------
@@ -186,9 +186,9 @@ class ResultsPage:
             # ---------- Styling ----------
             style = ttk.Style()
             # Configure base Treeview style with improved font and row height
-            style.configure("Treeview", font=("Arial", 11), rowheight=30, background="#F3F4F6", foreground="#1F2937")
+            style.configure("Treeview", font=("Poppins", 11), rowheight=30, background="#F3F4F6", foreground="#1F2937")
             # Configure heading style with specified Crimson (#BF3131)
-            style.configure("Treeview.Heading", font=("Arial", 12, "bold"), foreground="#FFFFFF", background="#BF3131")
+            style.configure("Treeview.Heading", font=("Poppins", 12, "bold"), foreground="#FFFFFF", background="#BF3131")
             # Customize hover and selected states with Muted Red (#AC5353)
             style.map("Treeview", background=[("selected", "#AC5353")], foreground=[("selected", "#FFFFFF")])
             style.map("Treeview.Heading", background=[("hover", "#AC5353")], foreground=[("hover", "#FFFFFF")])
@@ -197,7 +197,7 @@ class ResultsPage:
             self.tree.tag_configure("oddrow", background="#F3F4F6", foreground="#1F2937")
             self.tree.tag_configure("evenrow", background="#F3F4F6", foreground="#1F2937")
             self.tree.tag_configure("section", background="#BF3131", foreground="#FFFFFF", 
-                                font=("Arial", 12, "bold"))
+                                font=("Poppins", 12, "bold"))
 
             # ---------- Insert Data ----------
             for h in headers:
@@ -228,7 +228,7 @@ class ResultsPage:
             fg_color="#DC2626",
             hover_color="#B91C1C",
             text_color="#FFFFFF",
-            font=("Roboto", 14, "bold"),
+            font=("Poppins", 14, "bold"),
             corner_radius=5
         )
         summary_btn.pack(side="left", padx=5)
@@ -327,7 +327,7 @@ class ResultsPage:
         # Scrollable frame
         scroll_frame = CTkScrollableFrame(
             win, fg_color="#FFFFFF",
-            label_font=("Roboto", 14, "bold"),
+            label_font=("Poppins", 14, "bold"),
             label_text_color="#DC2626"
         )
         scroll_frame.pack(fill="both", expand=True, padx=20, pady=20)
@@ -338,19 +338,19 @@ class ResultsPage:
         # Helper for consistent rows
         def add_row(parent, row_idx, label, percent="", key=None):
             """Full row: Rating, Equivalent, Point Score (used in Performance)."""
-            CTkLabel(parent, text=label, font=("Roboto", 12),
+            CTkLabel(parent, text=label, font=("Poppins", 12),
                     text_color="#1F2937", anchor="w").grid(row=row_idx, column=0, sticky="w", padx=5, pady=2)
 
-            rating_entry = CTkEntry(parent, width=120, font=("Roboto", 12))
+            rating_entry = CTkEntry(parent, width=120, font=("Poppins", 12))
             rating_entry.grid(row=row_idx, column=1, padx=5, pady=2)
 
-            eq_entry = CTkEntry(parent, width=150, font=("Roboto", 12))
+            eq_entry = CTkEntry(parent, width=150, font=("Poppins", 12))
             eq_entry.grid(row=row_idx, column=2, padx=5, pady=2)
 
-            CTkLabel(parent, text=percent, font=("Roboto", 12),
+            CTkLabel(parent, text=percent, font=("Poppins", 12),
                     text_color="#1F2937", anchor="center").grid(row=row_idx, column=3, padx=5, pady=2)
 
-            point_entry = CTkEntry(parent, width=120, font=("Roboto", 12))
+            point_entry = CTkEntry(parent, width=120, font=("Poppins", 12))
             point_entry.grid(row=row_idx, column=4, padx=5, pady=2)
 
             if key:
@@ -362,16 +362,16 @@ class ResultsPage:
 
         def add_behavior_row(parent, row_idx, label, percent="", key=None):
             """Behavior row: Equivalent only (Dean fills manually)."""
-            CTkLabel(parent, text=label, font=("Roboto", 12),
+            CTkLabel(parent, text=label, font=("Poppins", 12),
                     text_color="#1F2937", anchor="w").grid(row=row_idx, column=0, sticky="w", padx=5, pady=2)
 
-            eq_entry = CTkEntry(parent, width=150, font=("Roboto", 12))
+            eq_entry = CTkEntry(parent, width=150, font=("Poppins", 12))
             eq_entry.grid(row=row_idx, column=2, padx=5, pady=2)
 
-            CTkLabel(parent, text=percent, font=("Roboto", 12),
+            CTkLabel(parent, text=percent, font=("Poppins", 12),
                     text_color="#1F2937", anchor="center").grid(row=row_idx, column=3, padx=5, pady=2)
 
-            point_entry = CTkEntry(parent, width=120, font=("Roboto", 12))
+            point_entry = CTkEntry(parent, width=120, font=("Poppins", 12))
             point_entry.grid(row=row_idx, column=4, padx=5, pady=2)
 
             if key:
@@ -401,16 +401,16 @@ class ResultsPage:
 
         #  Header
         CTkLabel(scroll_frame, text="TEACHING EFFICIENCY RATING (TER) SCALE FORM",
-                font=("Roboto", 16, "bold"), text_color="#FFFFFF",
+                font=("Poppins", 16, "bold"), text_color="#FFFFFF",
                 fg_color="#DC2626", corner_radius=6).pack(fill="x", pady=5)
 
         # === Instructor Info ===
         info_frame = CTkFrame(scroll_frame, fg_color="transparent")
         info_frame.pack(fill="x", pady=5)
         for lbl in ["Instructor:", "College:", "Rating Period:", "Department:"]:
-            CTkLabel(info_frame, text=lbl, font=("Roboto", 12),
+            CTkLabel(info_frame, text=lbl, font=("Poppins", 12),
                     text_color="#1F2937").pack(side="left", padx=5)
-            e = CTkEntry(info_frame, width=150, font=("Roboto", 12))
+            e = CTkEntry(info_frame, width=150, font=("Poppins", 12))
             e.pack(side="left", padx=10)
             # store by label text
             self.entry_widgets[lbl.strip(":").lower()] = e
@@ -420,17 +420,17 @@ class ResultsPage:
         perf_frame.pack(fill="x", pady=10)
 
         CTkLabel(perf_frame, text="I. PERFORMANCE (70%)",
-                font=("Roboto", 14, "bold"), text_color="#DC2626")\
+                font=("Poppins", 14, "bold"), text_color="#DC2626")\
             .grid(row=0, column=0, sticky="w", pady=(0, 5))
 
         headers = ["", "RATING", "RATING EQUIVALENT", "RATING %", "POINT SCORE"]
         for i, h in enumerate(headers):
-            CTkLabel(perf_frame, text=h, font=("Roboto", 12, "bold"),
+            CTkLabel(perf_frame, text=h, font=("Poppins", 12, "bold"),
                     text_color="#1F2937").grid(row=1, column=i, padx=5, pady=2)
 
         # Rows
         CTkLabel(perf_frame, text="1. Instruction (55%)",
-                font=("Roboto", 12, "bold"), text_color="#DC2626")\
+                font=("Poppins", 12, "bold"), text_color="#DC2626")\
             .grid(row=2, column=0, sticky="w", pady=(0, 3))
 
         add_row(perf_frame, 3, "a) Student as Rater", "25%", key="student_rater")
@@ -446,11 +446,11 @@ class ResultsPage:
         behav_frame.pack(fill="x", pady=10)
 
         CTkLabel(behav_frame, text="II. BEHAVIOR (30%)",
-                font=("Roboto", 14, "bold"), text_color="#DC2626")\
+                font=("Poppins", 14, "bold"), text_color="#DC2626")\
             .grid(row=0, column=0, sticky="w", pady=(0, 5))
 
         for i, h in enumerate(headers):
-            CTkLabel(behav_frame, text=h, font=("Roboto", 12, "bold"),
+            CTkLabel(behav_frame, text=h, font=("Poppins", 12, "bold"),
                     text_color="#1F2937").grid(row=1, column=i, padx=5, pady=2)
 
         add_behavior_row(behav_frame, 2, "1. Courtesy", "7.5%", key="courtesy")
@@ -467,9 +467,9 @@ class ResultsPage:
         plus_frame = CTkFrame(scroll_frame, fg_color="transparent")
         plus_frame.pack(fill="x", pady=10)
         CTkLabel(plus_frame, text="PLUS FACTOR (not to exceed one (1) credit point)",
-                font=("Roboto", 12, "bold"), text_color="#DC2626")\
+                font=("Poppins", 12, "bold"), text_color="#DC2626")\
             .grid(row=0, column=0, sticky="w", pady=(0, 5))
-        e_plus = CTkEntry(plus_frame, width=120, font=("Roboto", 12))
+        e_plus = CTkEntry(plus_frame, width=120, font=("Poppins", 12))
         e_plus.grid(row=0, column=1, padx=5, pady=2)
         self.entry_widgets["plus_factor"] = e_plus
 
@@ -483,9 +483,9 @@ class ResultsPage:
             ("Equivalent Adjective Rating", "eq_adjective"),
         ]
         for idx, (text, key) in enumerate(labels):
-            CTkLabel(summary_frame, text=text, font=("Roboto", 12, "bold"),
+            CTkLabel(summary_frame, text=text, font=("Poppins", 12, "bold"),
                     text_color="#1F2937").grid(row=idx, column=0, sticky="w", padx=5, pady=2)
-            e = CTkEntry(summary_frame, width=120, font=("Roboto", 12))
+            e = CTkEntry(summary_frame, width=120, font=("Poppins", 12))
             e.grid(row=idx, column=1, padx=5, pady=2)
             self.entry_widgets[key] = e
 
@@ -494,15 +494,15 @@ class ResultsPage:
         comments_frame.pack(fill="x", pady=10)
 
         CTkLabel(comments_frame, text="EMPLOYEE'S COMMENTS/REMARKS",
-                font=("Roboto", 12, "bold"), text_color="#DC2626").pack(anchor="w")
+                font=("Poppins", 12, "bold"), text_color="#DC2626").pack(anchor="w")
         self.entry_widgets["employee_comments"] = CTkTextbox(
-            comments_frame, height=50, width=900, font=("Roboto", 12))
+            comments_frame, height=50, width=900, font=("Poppins", 12))
         self.entry_widgets["employee_comments"].pack(pady=5)
 
         CTkLabel(comments_frame, text="RATER'S COMMENTS/REMARKS",
-                font=("Roboto", 12, "bold"), text_color="#DC2626").pack(anchor="w")
+                font=("Poppins", 12, "bold"), text_color="#DC2626").pack(anchor="w")
         self.entry_widgets["rater_comments"] = CTkTextbox(
-            comments_frame, height=50, width=900, font=("Roboto", 12))
+            comments_frame, height=50, width=900, font=("Poppins", 12))
         self.entry_widgets["rater_comments"].pack(pady=5)
         
                 # === Save Button ===
@@ -511,11 +511,11 @@ class ResultsPage:
 
         save_btn = CTkButton(
             save_frame,
-            text="💾 Save Summary",
+            text="Save Summary",
             fg_color="#DC2626",
             hover_color="#B91C1C",
             text_color="#FFFFFF",
-            font=("Roboto", 14, "bold"),
+            font=("Poppins", 14, "bold"),
             corner_radius=8,
             command=lambda: self.export_full_summary()
         )

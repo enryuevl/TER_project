@@ -3,7 +3,6 @@ from PIL import Image
 
 class HomePage:
     def __init__(self, master):
-        """Initialize the Home Page (Dashboard) inside a given frame."""
         self.master = master
         self._build_ui()
 
@@ -88,7 +87,7 @@ class HomePage:
         chart_area = CTkFrame(reports_frame, fg_color="transparent")
         chart_area.pack(fill="both", expand=True, padx=20, pady=10)
         CTkLabel(chart_area, text="Bar Chart of Students/Faculty will render here",
-                 font=("Arial", 14), text_color="#ADB5BD").place(relx=0.5, rely=0.5, anchor="center")
+                 font=("Poppins", 14), text_color="#ADB5BD").place(relx=0.5, rely=0.5, anchor="center")
 
     # ---------------- ARCHIVE SECTION (BIGGER) ----------------
     def _build_archive(self, parent):
@@ -132,7 +131,7 @@ class HomePage:
         table_area = CTkFrame(archive_frame, fg_color="#F8F9FA")
         table_area.pack(fill="both", expand=True, padx=20, pady=10)
         CTkLabel(table_area, text="Archive of TER Records will be displayed here",
-                 font=("Arial", 14), text_color="#6C757D").place(relx=0.5, rely=0.5, anchor="center")
+                 font=("Poppins", 14), text_color="#6C757D").place(relx=0.5, rely=0.5, anchor="center")
 
     # ---------------- RECENT EVALUATIONS ----------------
     def _build_table(self, parent):
@@ -150,4 +149,4 @@ class HomePage:
         table_area = CTkFrame(table_frame, fg_color="#F8F9FA")
         table_area.pack(fill="both", expand=True, padx=20, pady=10)
         CTkLabel(table_area, text="Table of evaluation results will be displayed here",
-                 font=("Arial", 14), text_color="#6C757D").place(relx=0.5, rely=0.5, anchor="center")
+                 font=("Poppins", 14), text_color="#6C757D").place(relx=0.5, rely=0.5, anchor="center")

@@ -72,7 +72,7 @@ CTkButton(
     image=load_icon("Logout"),
     text="Logout",
     fg_color="#AC5353",
-    font=("Arial", 14, "bold"),
+    font=("Poppins", 14, "bold"),
     text_color="#FFFFFF",
     hover_color="#BF3131",
     width=160,
@@ -98,7 +98,7 @@ shadow.pack(side="top", fill="x")
 CTkLabel(
     master=topbar,
     text="Camarines Norte State College",
-    font=("Arial", 18, "bold"),
+    font=("Poppins", 18, "bold"),
     text_color="#FFFFFF"
 ).place(relx=0.02, rely=0.5, anchor="w")
 
@@ -111,13 +111,13 @@ style.configure(
     foreground="#333333",
     rowheight=25,
     fieldbackground="#FFFFFF",
-    font=("Arial", 12)
+    font=("Poppins", 12)
 )
 style.configure(
     "Treeview.Heading",
     background="#691612",
     foreground="#FFFFFF",
-    font=("Arial", 12, "bold")
+    font=("Poppins", 12, "bold")
 )
 style.map(
     "Treeview",
@@ -152,7 +152,7 @@ for item, action in nav_actions.items():
         image=load_icon(item),
         text=item,
         fg_color="#AC5353",
-        font=("Arial", 14, "bold"),
+        font=("Poppins", 14, "bold"),
         text_color="#FFFFFF",  
         hover_color="#BF3131",
         width=160,
