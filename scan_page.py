@@ -229,14 +229,16 @@ class ScanPage:
                         self.processed_results.update(results)
                         self.save_results()
 
+                        # 🔑 Get files for current rater
                         teacher_files = results.get(teacher, {}).get(self.rater_var.get(), [])
                         if teacher_files:
-                            last_file = teacher_files[-1][0]
-                            self.display_image(last_file, teacher)
+                            # Update dropdown and preview (first file)
+                            self.update_preview(teacher_files)
 
                     self.status_label.configure(text="Processing complete!")
                 else:
                     self.status_label.configure(text="No documents found.")
+
 
             except Exception as e:
                 messagebox.showerror("Scan Error", str(e))
