@@ -130,7 +130,7 @@ class ScanPage:
         self.rater_var = StringVar(value="Student")  # default option
         self.rater_dropdown = CTkOptionMenu(
             teacher_frame, variable=self.rater_var,
-            values=["Student", "Peer", "Self", "Dean"],
+            values=["Student", "Peer", "Self"],
             fg_color="#BF3131", button_color="#691612",
             text_color="#FFFFFF", font=('Montserrat', 14),
             width=250, height=35
@@ -193,18 +193,22 @@ class ScanPage:
         try:
             with db.connect() as conn:
                 rows = conn.execute(
-                    "SELECT id, name FROM faculty ORDER BY name"
+                    "SELECT id, full_name FROM faculty ORDER BY full_name"
                 ).fetchall()
+
             if rows:
-                self.teacher_name_to_id = {name: fid for fid, name in rows}
+                # Map teacher full_name → faculty_id
+                self.teacher_name_to_id = {full_name: fid for fid, full_name in rows}
                 names = list(self.teacher_name_to_id.keys())
+
                 self.teacher_dropdown.configure(values=names)
                 self.teacher_dropdown.set(names[0])
-
             else:
                 self.teacher_dropdown.configure(values=["No teachers found"])
+
         except Exception as e:
             messagebox.showerror("DB Error", str(e))
+
 
     # ---------------- SCANNER ACTIONS ---------------- #
     def start_scan(self):
@@ -349,7 +353,32 @@ class ScanPage:
         # --- use dropdown rater type ---
         rater = self.rater_var.get() if hasattr(self, "rater_var") else "Unknown"
 
+        # ✅ Special rule: only one "Self" entry per teacher
+        if rater == "Self":
+            if len(new_results) > 1:
+                # Keep only the first scanned result
+                kept = new_results[0:1]
+                messagebox.showwarning(
+                    "Self Evaluation Restriction",
+                    f"Multiple pages were scanned for {teacher} as 'Self'.\n"
+                    f"Only the first page ({kept[0][0]}) has been kept."
+                )
+                new_results = kept
+
+            existing = self.processed_results.get(teacher, {}).get("Self", [])
+            if existing:
+                overwrite = messagebox.askyesno(
+                    "Overwrite Self Evaluation",
+                    f"A self-evaluation already exists for {teacher}.\nDo you want to overwrite it?"
+                )
+                if overwrite:
+                    return {teacher: {"Self": new_results}}  # overwrite with new
+                else:
+                    return {}  # cancel, don’t add anything
+
         return {teacher: {rater: new_results}}
+
+
 
     def set_controls_state(self, state="normal"):
         """Enable or disable all buttons/menus in the scan page."""

@@ -8,6 +8,9 @@ import pickle
 from tkinter import filedialog
 import openpyxl
 import win32com.client as win32
+from datetime import datetime
+from openpyxl import load_workbook
+from openpyxl import Workbook
 
 
 class ResultsPage:
@@ -21,6 +24,7 @@ class ResultsPage:
         print(self.processed_results)
         self._build_ui()
         
+
 # ---------------- UI ---------------- #
     def _build_ui(self):
         for widget in self.master.winfo_children():
@@ -48,6 +52,7 @@ class ResultsPage:
         self.controls_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=10)
         self._build_controls(self.controls_frame)
 
+# ---------------- Table Building ---------------- #
     def _build_tabs(self, parent):
         tab_frame = CTkFrame(parent, fg_color="transparent")
         tab_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
@@ -74,6 +79,7 @@ class ResultsPage:
 
         if first_teacher:
             self._on_teacher_selected(parent, first_teacher)
+
 
     def _build_table(self, parent, teacher_name, rater_type=None):
         # Clear previous table
@@ -145,11 +151,11 @@ class ResultsPage:
 
         return table
 
+# ---------------- Controls ---------------- #
     def _build_controls(self, parent):
         control_frame = CTkFrame(parent, fg_color="transparent")
         control_frame.pack(fill="x", padx=10, pady=10)
 
-        
 
         # New Summary View Button
         summary_btn = CTkButton(
@@ -182,7 +188,8 @@ class ResultsPage:
             command=lambda choice: self._on_rater_selected(choice)  # <— added callback
         )
         self.rater_dropdown.pack(padx=15, pady=10)
-        
+
+# ---------------- Summary Window ---------------- #
     def show_summary_window(self):
         if not self.current_teacher:
             messagebox.showwarning("No Teacher", "Please select a teacher first.")
@@ -242,8 +249,19 @@ class ResultsPage:
             e = self.entry_widgets["eq_adjective"]
             e.delete(0, "end")
             e.insert(0, eq_adj)
-            
-    # ---------------- Logic ---------------- #
+
+    def _build_dataframe(self, teacher_name):
+        """
+        Build a Pandas DataFrame from the calculated section totals.
+        """
+        data = self._calculate_section_totals(teacher_name)
+        if not data:
+            return None
+
+        return pd.DataFrame(data, columns=["Row", "Average Score", "Section Total"])
+    
+    # ---------------- Summary Popup ---------------- #
+    
     def _open_summary_popup(self):
         # Get screen width and height
         screen_width = self.master.winfo_screenwidth()
@@ -455,7 +473,7 @@ class ResultsPage:
             text_color="#FFFFFF",
             font=("Roboto", 14, "bold"),
             corner_radius=8,
-            command=lambda: self.save_summary_data()
+            command=lambda: self.export_full_summary()
         )
         save_btn.pack(pady=10)
         
@@ -471,7 +489,7 @@ class ResultsPage:
             self.entry_widgets["department"].insert(0, dept)
 
     def get_department_for_teacher(self, teacher_name: str) -> str:
-        """Lookup department name for a teacher in the database."""
+        """Lookup department name for a teacher in the database using full_name."""
         import db
 
         try:
@@ -482,7 +500,7 @@ class ResultsPage:
             SELECT d.name
             FROM faculty f
             JOIN departments d ON f.department_id = d.id
-            WHERE f.name = ?
+            WHERE f.full_name = ?
             """
             cur.execute(query, (teacher_name,))
             row = cur.fetchone()
@@ -493,85 +511,9 @@ class ResultsPage:
             print(f"❌ DB lookup failed: {e}")
             return ""
 
-    def save_summary_data(self, template_path="summary.xlsx"):
-        from openpyxl import load_workbook
-        from tkinter import messagebox
-        from datetime import datetime
+    
 
-        try:
-            wb = load_workbook(template_path)
-            ws = wb.active  # or wb["Sheet1"] if your sheet has a name
-
-            # Example mapping: entry key → Excel cell
-            mapping = {
-            # Header info
-            "instructor": "D9",         # Instructor name
-            "college": "D10",           # College
-            "rating period": "J9",      # Rating Period
-            "department": "J10",        # Department
-
-            # Performance - Instruction Raters
-            "student_rater": {"rating": "F15", "equivalent": "H15", "point": "L15"},
-            "peer_rater":    {"rating": "F16", "equivalent": "H16", "point": "L16"},
-            "dean_rater":    {"rating": "F17", "equivalent": "H17", "point": "L17"},
-
-            # Performance - Manual input
-            "research":      {"equivalent": "F19", "point": "L19"},
-            "extension":     {"equivalent": "F20", "point": "L20"},
-            "productivity":  {"equivalent": "F21", "point": "L21"},
-
-            # Behavior (manual input by Dean)
-            "courtesy":         {"equivalent": "H25", "point": "L25"},
-            "human_relations":  {"equivalent": "H26", "point": "L26"},
-            "punctuality":      {"equivalent": "H27", "point": "L27"},
-            "initiative":       {"equivalent": "H28", "point": "L28"},
-            "leadership":       {"equivalent": "H29", "point": "L29"},
-            "stress_tolerance": {"equivalent": "H30", "point": "L30"},
-
-            # Plus factor
-            "plus_factor": "J32",
-
-            # Summary ratings
-            "overall_point": "L35",
-            "eq_numerical": "L36",
-            "eq_adjective": "L37",
-        }
-
-
-            # Loop over entry_widgets and write values into Excel
-            for key, widget in self.entry_widgets.items():
-                if key not in mapping:
-                    continue
-
-                target = mapping[key]
-                if isinstance(widget, dict):  # rows with multiple fields
-                    for sub_key, entry in widget.items():
-                        if sub_key in target:
-                            ws[target[sub_key]] = entry.get().strip()
-                elif hasattr(widget, "get"):
-                    if widget.__class__.__name__ == "CTkTextbox":
-                        ws[target] = widget.get("1.0", "end").strip()
-                    else:
-                        ws[target] = widget.get().strip()
-
-             # ✅ Create "Summaries" folder inside Documents/MyWork
-            base_folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Summaries")
-            os.makedirs(base_folder, exist_ok=True)
-
-            # ✅ Generate new filename
-            safe_teacher = self.current_teacher.replace(" ", "_")
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            new_filename = f"Summary_{safe_teacher}_{timestamp}.xlsx"
-            save_path = os.path.join(base_folder, new_filename)
-
-            # Save workbook to new file
-            wb.save(save_path)
-
-            messagebox.showinfo("Saved", f"Summary saved to {save_path}")
-
-        except Exception as e:
-            messagebox.showerror("Save Error", str(e))
-
+    # ---------------- Data Persistence ---------------- #
     def load_results(self, path="results.pkl"):
         """Load processed_results dict from a pickle file (teacher → rater → docs)."""
         if not os.path.exists(path):
@@ -600,6 +542,8 @@ class ResultsPage:
             self.processed_results = {}
             return {}
 
+
+    # ---------------- Calculations ---------------- #
     def compute_equivalent_numerical(self, overall_score: float) -> int:
         """Convert overall point score to numerical rating using Excel-like rules."""
         if overall_score >= 9.3:
@@ -624,6 +568,72 @@ class ResultsPage:
         }
         return mapping.get(eq_num, "")
 
+    def calculate_row_averages(self, teacher_name, rater_type=None):
+        """Compute averages for a teacher and selected rater type."""
+        teacher_data = self.processed_results.get(teacher_name, {})
+
+        # Handle old flat list format
+        if isinstance(teacher_data, list):
+            teacher_data = {"Unknown": teacher_data}
+
+        # pick selected rater or default
+        if not rater_type:
+            if hasattr(self, "rater_var"):
+                rater_type = self.rater_var.get()
+            else:
+                rater_type = next(iter(teacher_data.keys()), None)
+
+        if not rater_type or rater_type not in teacher_data:
+            return {}
+
+        row_scores = {}
+
+        # Collect all rows for all documents under this rater
+        for _, result, *_ in teacher_data[rater_type]:
+            for section, rows in result.items():
+                for rownum, score in rows.items():
+                    row_key = f"{section} R{rownum}"
+                    row_scores.setdefault(row_key, []).append(score)
+
+        # Compute averages
+        averages = {}
+        for row_key, scores in row_scores.items():
+            if scores:
+                averages[row_key] = sum(scores) / len(scores)
+
+        return averages  # dict of row_key -> average score
+ 
+    def _calculate_section_totals(self, teacher_name):
+        averages = self.calculate_row_averages(teacher_name)
+        if not averages:
+            return None
+
+        # Group averages by section
+        section_rows = {}
+        for row_key, avg in averages.items():
+            section = " ".join(row_key.split()[:2])  # e.g. "Section 1"
+            section_rows.setdefault(section, []).append((row_key, avg))
+
+        # Build structured data (list of tuples)
+        data = []
+        section_totals = []
+        for section, rows in section_rows.items():
+            section_total = sum(avg for _, avg in rows)
+            section_totals.append(section_total)
+
+            for i, (row_key, avg) in enumerate(rows):
+                if i == 0:
+                    data.append((row_key, round(avg, 2), round(section_total, 2)))
+                else:
+                    data.append((row_key, round(avg, 2), ""))
+
+        # Add grand total row
+        grand_total = sum(section_totals)
+        data.append(("Grand Total", "", round(grand_total, 2)))
+        print(data)
+        return data
+    
+    # ---------------- Callbacks ---------------- #
     def _on_teacher_selected(self, parent, teacher_name):
         self.current_teacher = teacher_name
 
@@ -639,7 +649,6 @@ class ResultsPage:
 
         # Rebuild the table for the selected teacher & rater
         self._build_table(self.table_frame, self.current_teacher, rater_type)
-
 
     def set_value(self, key, value, field=None):
         """
@@ -671,6 +680,183 @@ class ResultsPage:
             else:
                 widget.delete(0, "end")
                 widget.insert(0, value)
+
+
+    # ---------------- summary helpers ---------------- #
+    def _write_manual_results(self, ws):
+        mapping = {
+            "instructor": "D9",
+            "college": "D10",
+            "rating period": "J9",
+            "department": "J10",
+
+            "research":      {"equivalent": "F19", "point": "L19"},
+            "extension":     {"equivalent": "F20", "point": "L20"},
+            "productivity":  {"equivalent": "F21", "point": "L21"},
+
+            "courtesy":         {"equivalent": "H25", "point": "L25"},
+            "human_relations":  {"equivalent": "H26", "point": "L26"},
+            "punctuality":      {"equivalent": "H27", "point": "L27"},
+            "initiative":       {"equivalent": "H28", "point": "L28"},
+            "leadership":       {"equivalent": "H29", "point": "L29"},
+            "stress_tolerance": {"equivalent": "H30", "point": "L30"},
+
+            
+        }
+
+        for key, widget in self.entry_widgets.items():
+            if key not in mapping:
+                continue
+
+            target = mapping[key]
+            if isinstance(widget, dict):
+                for sub_key, entry in widget.items():
+                    if sub_key in target:
+                        ws[target[sub_key]] = entry.get().strip()
+            elif hasattr(widget, "get"):
+                if widget.__class__.__name__ == "CTkTextbox":
+                    ws[target] = widget.get("1.0", "end").strip()
+                else:
+                    ws[target] = widget.get().strip()
+                    
+    def _write_student_scores(self, ws):
+        student_docs = self.processed_results.get(self.current_teacher, {}).get("Student", [])
+        if not student_docs:
+            print(f"⚠️ No Student results for {self.current_teacher}")
+            return
+
+        row_maps = {
+            "Section 1": {1: 12, 2: 13, 3: 14, 4: 15, 5: 16},
+            "Section 2": {1: 18, 2: 19, 3: 20, 4: 21, 5: 22},
+            "Section 3": {1: 24, 2: 25, 3: 26, 4: 27, 5: 28},
+            "Section 4": {1: 30, 2: 31, 3: 32, 4: 33, 5: 34},
+        }
+
+        start_col = 6  # column F
+
+        for doc_idx, (_, result) in enumerate(student_docs):
+            col = start_col + doc_idx
+            for section, row_map in row_maps.items():
+                for rownum, score in result.get(section, {}).items():
+                    excel_row = row_map.get(rownum)
+                    if excel_row:
+                        ws.cell(row=excel_row, column=col, value=score)
+
+    def _write_peer_scores(self, ws):
+        peer_docs = self.processed_results.get(self.current_teacher, {}).get("Peer", [])
+        if not peer_docs:
+            print(f"⚠️ No Peer results for {self.current_teacher}")
+            return
+
+        # Row mappings for each Section (Peer rater)
+        row_maps = {
+            "Section 1": {1: 12, 2: 13, 3: 14, 4: 15, 5: 16},
+            "Section 2": {1: 18, 2: 19, 3: 20, 4: 21, 5: 22},
+            "Section 3": {1: 24, 2: 25, 3: 26, 4: 27, 5: 28},
+            "Section 4": {1: 30, 2: 31, 3: 32, 4: 33, 5: 34},
+        }
+
+        # Starting column index (MG = 345 in Excel)
+        start_col = 345
+
+        for doc_idx, (_, result) in enumerate(peer_docs):
+            col = start_col + doc_idx  # shift one column per document (MG, MH, MI … MU)
+            for section, row_map in row_maps.items():
+                for rownum, score in result.get(section, {}).items():
+                    excel_row = row_map.get(rownum)
+                    if excel_row:
+                        ws.cell(row=excel_row, column=col, value=score)
+
+    def _write_self_scores(self, ws):
+        self_docs = self.processed_results.get(self.current_teacher, {}).get("Self", [])
+        if not self_docs:
+            print(f"⚠️ No Self results for {self.current_teacher}")
+            return
+
+        # We only accept 1 self evaluation → take the first one
+        _, result = self_docs[0]
+
+        # Row mappings for each Section (Self rater)
+        row_maps = {
+            "Section 1": {1: 46, 2: 47, 3: 48, 4: 49, 5: 50},
+            "Section 2": {1: 52, 2: 53, 3: 54, 4: 55, 5: 56},
+            "Section 3": {1: 58, 2: 59, 3: 60, 4: 61, 5: 62},
+            "Section 4": {1: 64, 2: 65, 3: 66, 4: 67, 5: 68},
+        }
+
+        # Fixed column index for column C = 3
+        col = 3
+
+        for section, row_map in row_maps.items():
+            for rownum, score in result.get(section, {}).items():
+                excel_row = row_map.get(rownum)
+                if excel_row:
+                    ws.cell(row=excel_row, column=col, value=score)
+
+    def _write_dean_scores(self, ws):
+        self_docs = self.processed_results.get(self.current_teacher, {}).get("Dean", [])
+        if not self_docs:
+            print(f"⚠️ No Self results for {self.current_teacher}")
+            return
+
+        # We only accept 1 self evaluation → take the first one
+        _, result = self_docs[0]
+
+        # Row mappings for each Section (Self rater)
+        row_maps = {
+            "Section 1": {1: 46, 2: 47, 3: 48, 4: 49, 5: 50},
+            "Section 2": {1: 52, 2: 53, 3: 54, 4: 55, 5: 56},
+            "Section 3": {1: 58, 2: 59, 3: 60, 4: 61, 5: 62},
+            "Section 4": {1: 64, 2: 65, 3: 66, 4: 67, 5: 68},
+        }
+
+        # Fixed column index for column O = 15
+        col = 15
+
+        for section, row_map in row_maps.items():
+            for rownum, score in result.get(section, {}).items():
+                excel_row = row_map.get(rownum)
+                if excel_row:
+                    ws.cell(row=excel_row, column=col, value=score)
+    
+    def export_full_summary(self, template_path="template.xlsx"):
+        
+        try:
+            wb = load_workbook(template_path)
+            ws_ti = wb["TI"]
+            ws_ter = wb["TER"]
+
+            # Fill Student scores into TI sheet
+            self._write_student_scores(ws_ti)
+
+            # Fill manual/dean inputs into TER sheet
+            self._write_manual_results(ws_ter)
+            
+            # Fill Peer scores into TER sheet
+            self._write_peer_scores(ws_ter)
+            
+            # Fill Self scores into TER sheet
+            self._write_self_scores(ws_ter)
+            
+            
+            
+            
+
+            # Save as new file
+            base_folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Summaries")
+            os.makedirs(base_folder, exist_ok=True)
+
+            safe_teacher = self.current_teacher.replace(" ", "_")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            new_filename = f"Summary_{safe_teacher}_{timestamp}.xlsx"
+            save_path = os.path.join(base_folder, new_filename)
+
+            wb.save(save_path)
+            messagebox.showinfo("Saved", f"✅ Summary saved to {save_path}")
+
+        except Exception as e:
+            messagebox.showerror("Save Error", str(e))
+
 
 
 

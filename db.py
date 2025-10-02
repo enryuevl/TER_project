@@ -31,16 +31,26 @@ CREATE TABLE IF NOT EXISTS departments (
 CREATE TABLE IF NOT EXISTS faculty (
     id INTEGER PRIMARY KEY,
     department_id INTEGER NOT NULL,
-    name TEXT NOT NULL,
-    rank TEXT NOT NULL CHECK (
-        rank IN ('Instructor','Assistant Professor','Associate Professor','Professor')
-    ),
-    subrank TEXT NOT NULL CHECK (
-        subrank IN ('I','II','III','IV')
-    ),
+    first_name TEXT NOT NULL,
+    middle_name TEXT,
+    last_name TEXT NOT NULL,
+    suffix TEXT,
+    full_name TEXT GENERATED ALWAYS AS (
+        TRIM(
+            first_name || ' ' ||
+            COALESCE(middle_name || ' ', '') ||
+            last_name || 
+            CASE 
+                WHEN suffix IS NOT NULL AND suffix != '' THEN ' ' || suffix 
+                ELSE '' 
+            END
+        )
+    ) STORED,
     FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
 );
 """
+
+
 
 
 
