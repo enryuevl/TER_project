@@ -11,6 +11,7 @@ import win32com.client as win32
 from datetime import datetime
 from openpyxl import load_workbook
 from openpyxl import Workbook
+from tkinter import ttk, messagebox
 
 
 class ResultsPage:
@@ -26,168 +27,190 @@ class ResultsPage:
         
 
 # ---------------- UI ---------------- #
+    
     def _build_ui(self):
-        for widget in self.master.winfo_children():
-            widget.destroy()
+        for w in self.master.winfo_children():
+            w.destroy()
 
-        self.content_frame = CTkFrame(self.master, fg_color="#F3F4F6")
-        self.content_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        self.container = CTkFrame(self.master, fg_color="transparent")
+        self.container.pack(fill="both", expand=True, padx=20, pady=20)
 
-        layout = CTkFrame(self.content_frame, fg_color="transparent")
-        layout.pack(fill="both", expand=True, padx=10, pady=10)
-        layout.grid_rowconfigure(0, weight=1)
-        layout.grid_rowconfigure(1, weight=3)
-        layout.grid_rowconfigure(2, weight=1)
-        
-            
-        # --- Table frame (create FIRST so it exists) ---
-        self.table_frame = CTkFrame(layout, fg_color="transparent")
-        self.table_frame.grid(row=1, column=0,sticky="nsew", padx=10, pady=10)
+        CTkLabel(self.container, text="Evaluation Results",
+                 font=("Arial", 24, "bold"), text_color="#691612").pack(pady=(0, 20))
 
-        # --- Teacher buttons ---
-        self._build_tabs(layout)
+        # Tabs: teachers
+        self.tab_frame = CTkFrame(self.container, fg_color="transparent")
+        self.tab_frame.pack(fill="x", pady=(0, 10))
 
-        # --- Controls ---
-        self.controls_frame = CTkFrame(layout, fg_color="transparent")
-        self.controls_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=10)
-        self._build_controls(self.controls_frame)
+        self.content_frame = CTkFrame(self.container, fg_color="#FFFFFF", corner_radius=10)
+        self.content_frame.pack(fill="both", expand=True)
 
-# ---------------- Table Building ---------------- #
-    def _build_tabs(self, parent):
-        tab_frame = CTkFrame(parent, fg_color="transparent")
-        tab_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        self.controls_frame = CTkFrame(self.container, fg_color="transparent")
+        self.controls_frame.pack(fill="x", pady=(10, 0))
 
-        self.tab_buttons = []
+        self._build_tabs()
+
+    # ---------------- Tabs ---------------- #
+    def _build_tabs(self):
+        self.tab_buttons = {}
         first_teacher = None
 
-        for teacher_name in self.processed_results.keys():
-            if first_teacher is None:
-                first_teacher = teacher_name
-
-            btn = CTkButton(
-                tab_frame,
-                text=teacher_name,
-                command=lambda t=teacher_name: self._on_teacher_selected(parent, t),
-                fg_color="#DC2626",
-                hover_color="#B91C1C",
-                text_color="#FFFFFF",
-                font=("Roboto", 14, "bold"),
-                corner_radius=5
-            )
+        for teacher in self.processed_results.keys():
+            if not first_teacher:
+                first_teacher = teacher
+            btn = CTkButton(self.tab_frame, text=teacher,
+                            command=lambda t=teacher: self.show_teacher(t),
+                            fg_color="#AC5353", hover_color="#BF3131",
+                            text_color="#FFFFFF", width=160, height=35, corner_radius=8)
             btn.pack(side="left", padx=5)
-            self.tab_buttons.append(btn)
+            self.tab_buttons[teacher] = btn
 
         if first_teacher:
-            self._on_teacher_selected(parent, first_teacher)
+            self.show_teacher(first_teacher)
+
+    def show_teacher(self, teacher):
+        self.current_teacher = teacher
+        # Reset tab highlight
+        for t, btn in self.tab_buttons.items():
+            btn.configure(fg_color="#AC5353" if t == teacher else "#F1F3F5",
+                          text_color="#FFFFFF" if t == teacher else "#333333")
+
+        # Build rater dropdown + table
+        for w in self.content_frame.winfo_children():
+            w.destroy()
+
+        header_frame = CTkFrame(self.content_frame, fg_color="transparent")
+        header_frame.pack(fill="x", padx=20, pady=10)
+
+        CTkLabel(header_frame, text=f"Results for {teacher}",
+                 font=("Arial", 20, "bold"), text_color="#691612").pack(side="left")
+
+        rater_options = list(self.processed_results[teacher].keys())
+        self.rater_var = StringVar(value=rater_options[0])
+        CTkOptionMenu(header_frame, variable=self.rater_var, values=rater_options,
+                      command=lambda r: self.build_table(r),
+                      fg_color="#691612", button_color="#AC5353",
+                      text_color="#FFFFFF", width=180).pack(side="right")
+
+        self.table_container = CTkFrame(self.content_frame, fg_color="transparent")
+        self.table_container.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+
+         # Controls container (bottom bar)
+        for w in self.controls_frame.winfo_children():
+            w.destroy()
+        self._build_controls(self.controls_frame)
+
+        # Default rater = first available
+        rater_options = list(self.processed_results[teacher].keys())
+        if rater_options:
+            self.rater_var.set(rater_options[0])
+            self.build_table(rater_options[0])
 
 
-    def _build_table(self, parent, teacher_name, rater_type=None):
-        # Clear previous table
-        for widget in parent.winfo_children():
-            widget.destroy()
+    # ---------------- Table ---------------- #
+    def build_table(self, rater_type):
+        self.current_rater = rater_type
+        for w in self.table_container.winfo_children():
+            w.destroy()
 
-        # Get data for teacher + rater
-        teacher_data = self.processed_results.get(teacher_name, {})
-        if isinstance(teacher_data, list):  # fallback for old format
-            teacher_data = {"Unknown": teacher_data}
-
-        if not rater_type:
-            rater_type = list(teacher_data.keys())[0]  # default to first rater
-
-        rater_data = teacher_data.get(rater_type, [])
-        if not rater_data:
-            CTkLabel(parent, text=f"No results for {rater_type}",
-                    font=("Roboto", 16), text_color="#374151").pack(pady=20)
+        data = self.processed_results[self.current_teacher].get(rater_type, [])
+        if not data:
+            CTkLabel(self.table_container, text="No results available",
+                    font=("Arial", 14), text_color="#374151").pack(pady=20)
             return
 
-        # ---------- Build headers ----------
-        headers = ["Section/Row"]
-        for idx, (filename, result, *_) in enumerate(rater_data):
-            headers.append(f"Doc {idx+1}")
+        # ---------- Section Titles ----------
+        section_titles = {
+            "Section 1": "I. Commitment",
+            "Section 2": "II. Knowledge of Subject",
+            "Section 3": "III. Teaching for Independent Learning",
+            "Section 4": "IV. Management of Learning"
+        }
 
-        table_data = [headers]
+        # ---------- Headers ----------
+        headers = ["Question"]
+        for idx, (fname, result, *_) in enumerate(data):
+            headers.append(f"{fname}")
 
-        # ---------- Collect all section-row keys ----------
-        all_rows = set()
-        for _, result, *_ in rater_data:
-            for section, rows in result.items():
-                for rownum in rows.keys():
-                    all_rows.add(f"{section} R{rownum}")
-        all_rows = sorted(all_rows)
+        # ---------- Collect rows ----------
+        table_data = []
+        sections = sorted({sec for _, result, *_ in data for sec in result.keys()})
+        for sec in sections:
+            # Section header row (mapped title)
+            title = section_titles.get(sec, sec)
+            table_data.append([title] + [""] * len(data))
 
-        # ---------- Fill rows ----------
-        for row_key in all_rows:
-            row_data = [row_key]
-            for _, result, *_ in rater_data:
-                section, rownum = row_key.split(" R")
-                rownum = int(rownum)
-                score = result.get(section, {}).get(rownum, "")
-                row_data.append(score if score != "" else 0)
-            table_data.append(row_data)
+            # Row items under each section
+            max_rows = max(len(result.get(sec, {})) for _, result, *_ in data)
+            for rownum in range(1, max_rows + 1):
+                row = [f"{rownum}"]  # just show row number under section
+                for _, result, *_ in data:
+                    score = result.get(sec, {}).get(rownum, "")
+                    row.append(score)
+                table_data.append(row)
 
-        # ---------- Add totals ----------
-        totals = ["Total"]
-        for _, result, *_ in rater_data:
-            total_score = sum(sum(rows.values()) for rows in result.values())
-            totals.append(total_score)
-        table_data.append(totals)
+        # ---------- Treeview ----------
+        frame = CTkFrame(self.table_container, fg_color="transparent")
+        frame.pack(fill="both", expand=True)
 
-        # ---------- Create CTkTable ----------
-        table = CTkTable(
-            parent,
-            row=len(table_data),
-            column=len(table_data[0]),
-            values=table_data,
-            header_color="#DC2626",
-            hover_color="#FECACA",
-            colors=["#FFFFFF", "#F9FAFB"],
-            color_phase="horizontal",
-            corner_radius=10,
-            font=("Roboto", 12),
-            text_color="#1F2937",
-            justify="center"
-        )
-        table.pack(expand=True, fill="both", padx=10, pady=10)
+        x_scroll = CTkScrollbar(frame, orientation="horizontal")
+        x_scroll.pack(side="bottom", fill="x")
+        y_scroll = CTkScrollbar(frame, orientation="vertical")
+        y_scroll.pack(side="right", fill="y")
 
-        return table
+        self.tree = ttk.Treeview(frame, columns=headers, show="headings",
+                                xscrollcommand=x_scroll.set,
+                                yscrollcommand=y_scroll.set, height=20)
+        self.tree.pack(fill="both", expand=True)
+
+        x_scroll.configure(command=self.tree.xview)
+        y_scroll.configure(command=self.tree.yview)
+
+        # ---------- Styling ----------
+        style = ttk.Style()
+        style.configure("Treeview", font=("Arial", 11), rowheight=28)
+        style.configure("Treeview.Heading", font=("Arial", 12, "bold"), foreground="#691612")
+
+        self.tree.tag_configure("oddrow", background="#FFFFFF")
+        self.tree.tag_configure("evenrow", background="#F9FAFB")
+        self.tree.tag_configure("section", background="#F3F4F6",
+                                font=("Arial", 12, "bold"))
+
+        # ---------- Insert Data ----------
+        for h in headers:
+            self.tree.heading(h, text=h)
+            self.tree.column(h, width=120, anchor="center")
+
+        section_row_index = 0
+        for row in table_data:
+            if row[0].startswith(("I.", "II.", "III.", "IV.")):
+                self.tree.insert("", "end", values=row, tags=("section",))
+                section_row_index = 0
+            else:
+                tag = "evenrow" if section_row_index % 2 == 0 else "oddrow"
+                self.tree.insert("", "end", values=row, tags=(tag,))
+                section_row_index += 1
+
+
+
 
 # ---------------- Controls ---------------- #
     def _build_controls(self, parent):
         control_frame = CTkFrame(parent, fg_color="transparent")
         control_frame.pack(fill="x", padx=10, pady=10)
 
-
-        # New Summary View Button
+        # View Summary Button
         summary_btn = CTkButton(
             control_frame,
             text="View Summary",
             command=self.show_summary_window,
-            fg_color="#DC2626",  # Red primary color
-            hover_color="#B91C1C",  # Darker red on hover
+            fg_color="#DC2626",
+            hover_color="#B91C1C",
             text_color="#FFFFFF",
-            font=("Roboto", 14),
+            font=("Roboto", 14, "bold"),
             corner_radius=5
         )
         summary_btn.pack(side="left", padx=5)
-        
-        CTkLabel(
-            control_frame, text="Select Rater Type",
-            font=('Montserrat', 16, 'bold'),
-            text_color="#334155"
-        ).pack(pady=10, padx=15, anchor="w")
-
-        self.rater_var = StringVar(value="Student")
-
-        self.rater_dropdown = CTkOptionMenu(
-            control_frame,
-            variable=self.rater_var,
-            values=["Student", "Peer", "Self", "Dean"],
-            fg_color="#BF3131", button_color="#691612",
-            text_color="#FFFFFF", font=('Montserrat', 14),
-            width=250, height=35,
-            command=lambda choice: self._on_rater_selected(choice)  # <— added callback
-        )
-        self.rater_dropdown.pack(padx=15, pady=10)
 
 # ---------------- Summary Window ---------------- #
     def show_summary_window(self):
@@ -692,7 +715,7 @@ class ResultsPage:
 
             "research":      {"equivalent": "F19", "point": "L19"},
             "extension":     {"equivalent": "F20", "point": "L20"},
-            "productivity":  {"equivalent": "F21", "point": "L21"},
+            "production":    {"equivalent": "F21", "point": "L21"},
 
             "courtesy":         {"equivalent": "H25", "point": "L25"},
             "human_relations":  {"equivalent": "H26", "point": "L26"},
@@ -833,12 +856,13 @@ class ResultsPage:
             self._write_manual_results(ws_ter)
             
             # Fill Peer scores into TER sheet
-            self._write_peer_scores(ws_ter)
+            self._write_peer_scores(ws_ti)
             
             # Fill Self scores into TER sheet
-            self._write_self_scores(ws_ter)
+            self._write_self_scores(ws_ti)
             
-            
+            # Fill Dean scores into TER sheet
+            self._write_dean_scores(ws_ti)
             
             
 
