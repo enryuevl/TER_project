@@ -869,43 +869,31 @@ class ResultsPage:
                     ws.cell(row=excel_row, column=col, value=score)
     
     def export_full_summary(self, template_path="template.xlsx"):
-        
         try:
             wb = load_workbook(template_path)
             ws_ti = wb["TI"]
             ws_ter = wb["TER"]
 
-            # Fill Student scores into TI sheet
+            # Fill scores into the sheets
             self._write_student_scores(ws_ti)
-
-            # Fill manual/dean inputs into TER sheet
             self._write_manual_results(ws_ter)
-            
-            # Fill Peer scores into TER sheet
             self._write_peer_scores(ws_ti)
-            
-            # Fill Self scores into TER sheet
             self._write_self_scores(ws_ti)
-            
-            # Fill Dean scores into TER sheet
             self._write_dean_scores(ws_ti)
-            
-            
 
-            # Save as new file
+            # Save path → always overwrite one file per teacher
             base_folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Summaries")
             os.makedirs(base_folder, exist_ok=True)
 
             safe_teacher = self.current_teacher.replace(" ", "_")
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            new_filename = f"Summary_{safe_teacher}_{timestamp}.xlsx"
-            save_path = os.path.join(base_folder, new_filename)
+            save_path = os.path.join(base_folder, f"Summary_{safe_teacher}.xlsx")  # 👈 no timestamp
 
             wb.save(save_path)
-            messagebox.showinfo("Saved", f"✅ Summary saved to {save_path}")
+            messagebox.showinfo("Saved", f"✅ Summary updated: {save_path}")
 
         except Exception as e:
             messagebox.showerror("Save Error", str(e))
+
 
 
 

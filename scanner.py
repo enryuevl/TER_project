@@ -140,7 +140,7 @@ class DocumentCounter:
         return 1
     
     def get_next_filename(self):
-        filename = f"scan_{self.current_count:03d}.bmp"  # Using BMP for faster saves
+        filename = f"{self.current_count}.bmp" # Using BMP for faster saves
         self.current_count += 1
         return filename
     
