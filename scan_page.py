@@ -224,31 +224,45 @@ class ScanPage:
                 pages = scanner.scan_batch()
 
                 if pages > 0:
-                    results = self.process_work_folder(teacher)
+                    results, qc_errors = self.process_work_folder(teacher)
+
+                    # Show one message if there were any rejected pages
+                    if qc_errors:
+                        lines = [f"• {fname} → {reason}" for fname, reason in qc_errors]
+                        messagebox.showerror(
+                            "Incomplete / Blank Pages Detected",
+                            "The following documents have missing keys and were discarded:\n\n"
+                            + "\n".join(lines) +
+                            "\n\nPlease rescan those page(s)."
+                        )
+
                     if results:
                         self.processed_results.update(results)
                         self.save_results()
 
-                        # 🔑 Get files for current rater
+                        # 🔑 Show preview for this rater only (if any clean files)
                         teacher_files = results.get(teacher, {}).get(self.rater_var.get(), [])
                         if teacher_files:
-                            # Update dropdown and preview (first file)
                             self.update_preview(teacher_files)
 
-                    self.status_label.configure(text="Processing complete!")
+                    # If everything was bad, tell the user
+                    if not results and not qc_errors:
+                        self.status_label.configure(text="No new documents found.")
+                    else:
+                        self.status_label.configure(text="Processing complete!")
+
                 else:
                     self.status_label.configure(text="No documents found.")
-
 
             except Exception as e:
                 messagebox.showerror("Scan Error", str(e))
             finally:
                 pythoncom.CoUninitialize()
-                # ✅ re-enable controls and close popup
                 self.set_controls_state("normal")
                 set_sidebar_state
                 if hasattr(self, "wait_popup") and self.wait_popup.winfo_exists():
                     self.wait_popup.destroy()
+
 
         # ✅ disable controls and show popup
         self.set_controls_state("disabled")
@@ -298,7 +312,29 @@ class ScanPage:
         self.document_listbox.configure(values=["No documents loaded"])
         self.processed_results.clear()
 
-    # ---------------- PROCESS & SAVE ---------------- #
+    # ---------------- PROCESSING---------------- #
+    def _qc_check_page(self, result_dict):
+        """
+        Returns (is_ok, page_blank, missing_map, total_detected)
+        - is_ok = True only if all 4 sections have complete rows (1..5)
+        - page_blank = True if nothing detected
+        - missing_map = {section: [missing rows]}
+        """
+        expected = {"Section 1": 5, "Section 2": 5, "Section 3": 5, "Section 4": 5}
+        missing_map = {}
+        total_detected = 0
+
+        for sec, n in expected.items():
+            got = set(result_dict.get(sec, {}).keys())
+            total_detected += len(got)
+            missing = sorted(set(range(1, n + 1)) - got)
+            missing_map[sec] = missing
+
+        page_blank = (total_detected == 0)
+        # A page is OK only if no section has missing rows
+        is_ok = (not page_blank) and all(len(m) == 0 for m in missing_map.values())
+        return is_ok, page_blank, missing_map, total_detected
+
     def process_scan(self):
         if not self.processed_results:
             messagebox.showwarning("Warning", "No scan found.")
@@ -306,36 +342,17 @@ class ScanPage:
         self.progress_bar.set(1.0)
         messagebox.showinfo("Done", "Evaluation processed successfully!")
 
-    def save_csv(self):
-        if not self.processed_results:
-            messagebox.showwarning("Warning", "Nothing to save.")
-            return
-        path = filedialog.asksaveasfilename(defaultextension=".csv",
-                                            filetypes=[("CSV", "*.csv"), ("Excel", "*.xlsx")])
-        if not path: return
-        try:
-            rows = []
-            for teacher, docs in self.processed_results.items():
-                for file, result in docs:
-                    row = {"Teacher": teacher, "File": file}
-                    for sec, sec_data in result.items():
-                        for rownum, score in sec_data.items():
-                            row[f"{sec} Row {rownum}"] = score
-                    rows.append(row)
-            df = pd.DataFrame(rows)
-            if path.endswith(".csv"): df.to_csv(path, index=False)
-            else: df.to_excel(path, index=False)
-            messagebox.showinfo("Saved", f"Results saved to {os.path.basename(path)}")
-        except Exception as e:
-            messagebox.showerror("Save Error", str(e))
-
     def process_work_folder(self, teacher):
         folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Scan", teacher)
         if not os.path.exists(folder):
             os.makedirs(folder, exist_ok=True)
 
         new_results = []
+        qc_errors = []  # collect (filename, message) for batch popup
         last_time = self.last_processed_times.get(teacher, 0)
+
+        # --- use dropdown rater type ---
+        rater = self.rater_var.get() if hasattr(self, "rater_var") else "Unknown"
 
         for file in os.scandir(folder):
             if not file.name.lower().endswith(".bmp"):
@@ -347,24 +364,49 @@ class ScanPage:
             img = cv2.imread(filepath)
 
             result_dict, annotated_img = main_code.process_sections(img)
-            new_results.append((file.name, result_dict))
 
+            # ---- QC check for blanks/incomplete ----
+            is_ok, page_blank, missing_map, total_detected = self._qc_check_page(result_dict)
+
+            if not is_ok:
+                # Build a readable reason
+                if page_blank:
+                    reason = "no marks detected"
+                else:
+                    summary = "; ".join(f"{sec} missing {','.join(map(str, miss))}"
+                                        for sec, miss in missing_map.items() if miss)
+                    reason = f"incomplete ({summary})"
+
+                qc_errors.append((file.name, reason))
+
+                # Delete the bad image so it won't linger
+                try:
+                    os.remove(filepath)
+                except Exception:
+                    pass
+
+                # DO NOT add to new_results nor update last_processed_times for this file
+                continue
+
+            # ---- Keep only clean pages ----
+            new_results.append((file.name, result_dict))
             self.annotated_cache[file.name] = annotated_img
             self.last_processed_times[teacher] = max(last_time, file.stat().st_mtime)
-
-        # --- use dropdown rater type ---
-        rater = self.rater_var.get() if hasattr(self, "rater_var") else "Unknown"
 
         # ✅ Special rule: only one "Self" entry per teacher
         if rater == "Self":
             if len(new_results) > 1:
                 # Keep only the first scanned result
                 kept = new_results[0:1]
-                messagebox.showwarning(
-                    "Self Evaluation Restriction",
-                    f"Multiple pages were scanned for {teacher} as 'Self'.\n"
-                    f"Only the first page ({kept[0][0]}) has been kept."
-                )
+                # Append to QC errors for visibility
+                for extra in new_results[1:]:
+                    qc_errors.append((extra[0], "Self evaluation allows only one page (discarded)"))
+                    # Also delete extra images if they still exist (should exist because passed QC)
+                    extra_path = os.path.join(folder, extra[0])
+                    try:
+                        os.remove(extra_path)
+                    except Exception:
+                        pass
                 new_results = kept
 
             existing = self.processed_results.get(teacher, {}).get("Self", [])
@@ -374,32 +416,22 @@ class ScanPage:
                     f"A self-evaluation already exists for {teacher}.\nDo you want to overwrite it?"
                 )
                 if overwrite:
-                    return {teacher: {"Self": new_results}}  # overwrite with new
+                    # overwrite with new (clean) results
+                    return ({teacher: {"Self": new_results}} if new_results else {}), qc_errors
                 else:
-                    return {}  # cancel, don’t add anything
+                    return ({}, qc_errors)
 
-        return {teacher: {rater: new_results}}
+        # Normal case: return clean results only
+        return ({teacher: {rater: new_results}} if new_results else {}), qc_errors
 
 
 
-    def set_controls_state(self, state="normal"):
-        """Enable or disable all buttons/menus in the scan page."""
-        widgets = [
-            self.process_button,
-            self.save_button,
-            self.teacher_dropdown,
-            self.document_listbox,
-            # add more if needed
-        ]
-        for w in widgets:
-            try:
-                w.configure(state=state)
-            except Exception:
-                pass
 
     
 
     
+
+    # ---------------- RESULT HANDLERS ---------------- #
 
     def save_results(self, path=None):
         try:
@@ -453,7 +485,28 @@ class ScanPage:
         except Exception as e:
             print(f"❌ Error saving results: {e}")
 
-
+    def save_csv(self):
+        if not self.processed_results:
+            messagebox.showwarning("Warning", "Nothing to save.")
+            return
+        path = filedialog.asksaveasfilename(defaultextension=".csv",
+                                            filetypes=[("CSV", "*.csv"), ("Excel", "*.xlsx")])
+        if not path: return
+        try:
+            rows = []
+            for teacher, docs in self.processed_results.items():
+                for file, result in docs:
+                    row = {"Teacher": teacher, "File": file}
+                    for sec, sec_data in result.items():
+                        for rownum, score in sec_data.items():
+                            row[f"{sec} Row {rownum}"] = score
+                    rows.append(row)
+            df = pd.DataFrame(rows)
+            if path.endswith(".csv"): df.to_csv(path, index=False)
+            else: df.to_excel(path, index=False)
+            messagebox.showinfo("Saved", f"Results saved to {os.path.basename(path)}")
+        except Exception as e:
+            messagebox.showerror("Save Error", str(e))
 
      
     def load_results(self, path=None):
@@ -522,3 +575,18 @@ class ScanPage:
             self.img_label.configure(image=None, text="Error loading image")
             messagebox.showerror("Image Error", str(e))
 
+    # ---------------- OTHERS ---------------- #
+    def set_controls_state(self, state="normal"):
+        """Enable or disable all buttons/menus in the scan page."""
+        widgets = [
+            self.process_button,
+            self.save_button,
+            self.teacher_dropdown,
+            self.document_listbox,
+            # add more if needed
+        ]
+        for w in widgets:
+            try:
+                w.configure(state=state)
+            except Exception:
+                pass
