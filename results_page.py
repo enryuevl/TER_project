@@ -13,6 +13,12 @@ from openpyxl import load_workbook
 from openpyxl import Workbook
 from tkinter import ttk, messagebox
 import db
+import utils 
+from datetime import date
+import re
+import shutil, zipfile, time
+from pathlib import Path
+
 
 class ResultsPage:
     def __init__(self, master, processed_results):
@@ -232,6 +238,20 @@ class ResultsPage:
             corner_radius=5
         )
         summary_btn.pack(side="left", padx=5)
+        
+        
+        archive_btn = CTkButton(
+            control_frame,
+            text="Archive this Semester",
+            command=self.archive_current_semester,
+            fg_color="#691612",
+            hover_color="#8B1D18",
+            text_color="#FFFFFF",
+            font=("Roboto", 14, "bold"),
+            corner_radius=5
+        )
+        archive_btn.pack(side="left", padx=5)
+
 
 # ---------------- Summary Window ---------------- #
     def show_summary_window(self):
@@ -531,6 +551,18 @@ class ResultsPage:
         if dept and "department" in self.entry_widgets:
             self.entry_widgets["department"].delete(0, "end")
             self.entry_widgets["department"].insert(0, dept)
+        # Academic Year
+        ay, sem = self._infer_ay_and_sem_from_today()
+
+        if "academic year" in self.entry_widgets:
+            self.entry_widgets["academic year"].delete(0, "end")
+            self.entry_widgets["academic year"].insert(0, ay)
+
+        # Rating Period = "AY + Semester"
+        if "rating period" in self.entry_widgets:
+            self.entry_widgets["rating period"].delete(0, "end")
+            self.entry_widgets["rating period"].insert(0, f"AY {ay}, {sem}")
+
 
     def get_department_for_teacher(self, teacher_name: str) -> str:
         """Lookup department name for a teacher in the database using full_name."""
@@ -730,6 +762,41 @@ class ResultsPage:
                 widget.delete(0, "end")
                 widget.insert(0, value)
 
+    
+   
+
+    # ---------------- Static Helpers ---------------- #
+    @staticmethod
+    def _safe_filename(name: str) -> str:
+        name = re.sub(r'[\\/:*?"<>|]+', "", name)
+        name = re.sub(r"\s+", " ", name).strip()
+        return name
+
+    @staticmethod
+    def _infer_ay_and_sem_from_today():
+        """Infer AY and Sem from today's date (PH academic calendar)."""
+        today = date.today()
+        y, m = today.year, today.month
+        if 8 <= m <= 12:
+            return f"{y}-{y+1}", "1st Sem"
+        elif 1 <= m <= 5:
+            return f"{y-1}-{y}", "2nd Sem"
+        else:  # Jun–Jul
+            return f"{y-1}-{y}", "Midyear"
+
+    @staticmethod
+    def _ay_for_sem(selected_sem: str, anchor: date | None = None) -> str:
+        """
+        Given an explicit semester label ("1st Sem", "2nd Sem", "Midyear"),
+        compute the correct AY relative to 'anchor' (defaults to today).
+        """
+        d = anchor or date.today()
+        y = d.year
+        if selected_sem == "1st Sem":
+            return f"{y}-{y+1}"      # Aug–Dec of the current year
+        else:
+            return f"{y-1}-{y}"      # Jan–Jul belong to the AY that started last year
+
 
     # ---------------- summary helpers ---------------- #
     def _write_manual_results(self, ws):
@@ -845,7 +912,7 @@ class ResultsPage:
     def _write_dean_scores(self, ws):
         self_docs = self.processed_results.get(self.current_teacher, {}).get("Dean", [])
         if not self_docs:
-            print(f"⚠️ No Self results for {self.current_teacher}")
+            print(f"⚠️ No Dean results for {self.current_teacher}")
             return
 
         # We only accept 1 self evaluation → take the first one
@@ -870,32 +937,132 @@ class ResultsPage:
     
     def export_full_summary(self, template_path="template.xlsx"):
         try:
+            # --- AY & Semester logic (do this FIRST so we can also fill 'Rating Period') ---
+            sem = getattr(self, "semester_var", None).get() if hasattr(self, "semester_var") else None
+            ay  = getattr(self, "academic_year_var", None).get() if hasattr(self, "academic_year_var") else None
+
+            if sem and not ay:
+                ay = self._ay_for_sem(sem)  # compute AY based on chosen sem + today
+            if not sem and not ay:
+                ay, sem = self._infer_ay_and_sem_from_today()
+
+            # If the popup is open, auto-fill the Rating Period entry so it gets written by _write_manual_results
+            if hasattr(self, "entry_widgets") and "rating period" in self.entry_widgets:
+                e = self.entry_widgets["rating period"]
+                try:
+                    e.delete(0, "end")
+                    e.insert(0, f"{sem} AY {ay}")
+                except Exception:
+                    pass
+
+            # --- Load template (see #3 below for safer path resolution) ---
             wb = load_workbook(template_path)
             ws_ti = wb["TI"]
             ws_ter = wb["TER"]
 
-            # Fill scores into the sheets
+            # Fill scores (manual must come AFTER we set the rating period)
             self._write_student_scores(ws_ti)
             self._write_manual_results(ws_ter)
             self._write_peer_scores(ws_ti)
             self._write_self_scores(ws_ti)
             self._write_dean_scores(ws_ti)
 
-            # Save path → always overwrite one file per teacher
+            # --- AY & Semester logic ---
+            sem = getattr(self, "semester_var", None).get() if hasattr(self, "semester_var") else None
+            ay  = getattr(self, "academic_year_var", None).get() if hasattr(self, "academic_year_var") else None
+
+            if sem and not ay:
+                ay = self._ay_for_sem(sem)  # compute AY based on chosen sem + today
+            if not sem and not ay:
+                ay, sem = self._infer_ay_and_sem_from_today()
+
+            # --- Save as "Name, AY, Semester.xlsx" ---
             base_folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Summaries")
             os.makedirs(base_folder, exist_ok=True)
 
-            safe_teacher = self.current_teacher.replace(" ", "_")
-            save_path = os.path.join(base_folder, f"Summary_{safe_teacher}.xlsx")  # 👈 no timestamp
+            teacher_name = self.current_teacher or "Unknown Teacher"
+            file_title = f"{teacher_name}, {ay}, {sem}"
+            filename = self._safe_filename(file_title) + ".xlsx"
+            save_path = os.path.join(base_folder, filename)
 
             wb.save(save_path)
             messagebox.showinfo("Saved", f"✅ Summary updated: {save_path}")
+
+            # Activity log
+            user = utils.get_current_user()
+            db.log_activity(
+                action="export_summary",
+                actor_name=user.get("name"),
+                actor_role=user.get("role"),
+                department_id=user.get("department_id"),
+                teacher_name=self.current_teacher,
+                file_name=filename,
+                details={"path": save_path, "academic_year": ay, "semester": sem}
+            )
 
         except Exception as e:
             messagebox.showerror("Save Error", str(e))
 
 
-
-
-
+    # ---------------- Archive Semester ---------------- #
     
+    def archive_current_semester(self):
+        """
+        Zip a selected semester folder (department > academic year > semester > profs)
+        and store to: Archived > department > academic year > <semester>_<timestamp>.zip
+        """
+        # 1) Let user pick the semester folder to archive
+        semester_dir = filedialog.askdirectory(
+            title="Select the SEMESTER folder to archive (e.g., .../Department/2025-2026/1st)"
+        )
+        if not semester_dir:
+            return
+
+        sem_path = Path(semester_dir)
+        if not sem_path.exists() or not sem_path.is_dir():
+            messagebox.showerror("Invalid folder", "Please select a valid semester folder.")
+            return
+
+        # Expect path like .../<Department>/<Academic Year>/<Semester>
+        # Get last 3 parts robustly
+        try:
+            semester = sem_path.name
+            academic_year = sem_path.parent.name
+            department = sem_path.parent.parent.name
+        except Exception:
+            messagebox.showerror(
+                "Path error",
+                "Could not infer Department/Academic Year/Semester from the selected path.\n"
+                "Expected: .../<Department>/<Academic Year>/<Semester>"
+            )
+            return
+
+        # 2) Resolve MyWork root using your DB helper
+        try:
+            base_dir = Path(os.path.dirname(db.get_default_db_path()))
+        except Exception:
+            # fallback to Documents/MyWork
+            base_dir = Path(os.path.expanduser("~")) / "Documents" / "MyWork"
+
+        # 3) Build archive destination: .../Archived/<Department>/<Academic Year>/
+        archive_root = base_dir / "Archived" / department / academic_year
+        archive_root.mkdir(parents=True, exist_ok=True)
+
+        # 4) ZIP name: <Semester>_<YYYYMMDD-HHMM>.zip
+        stamp = time.strftime("%Y%m%d-%H%M")
+        base_name = f"{semester}_{stamp}"
+        zip_noext = archive_root / base_name
+
+        try:
+            # Make archive from the semester folder DOWN (include prof subfolders)
+            # shutil.make_archive needs a str path and base name WITHOUT extension.
+            shutil.make_archive(str(zip_noext), 'zip', root_dir=str(sem_path))
+        except Exception as e:
+            messagebox.showerror("Archive failed", f"Could not create archive:\n{e}")
+            return
+
+        messagebox.showinfo(
+            "Archived",
+            f"Created archive:\n{zip_noext.with_suffix('.zip')}\n\n"
+            f"Stored under: Archived > {department} > {academic_year}"
+    )

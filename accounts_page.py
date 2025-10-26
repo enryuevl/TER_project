@@ -8,14 +8,24 @@ import shutil
 import os
 
 class AccountsDatabasePage:
-    def __init__(self, master):
+    def __init__(self, master, ctx):
         self.master = master
         self.tab_buttons = {}
         self.current_tab = None
         self.sidepanel = None
         self.tree = None
+        self.ctx = ctx
 
         self._build_ui()
+
+    # --- Role/Dept helpers ---
+    def _is_operator(self) -> bool:
+        # Treat both operator and dean as department-scoped users
+        return (self.ctx.role or "").lower() in ("operator", "dean") \
+            and self.ctx.department_id is not None
+
+    def _dept_param(self):
+        return (self.ctx.department_id,)  # convenience tuple for SQL params
 
     # ---------------- UI ---------------- #
     def _build_ui(self):
@@ -249,43 +259,37 @@ class AccountsDatabasePage:
         def load_data(term=None):
             self.tree.delete(*self.tree.get_children())
             with db.connect() as conn:
-                dept_id = None
-                if term:
-                    dept_id = self._resolve_department_id_by_name(conn, term)
+                params = []
+                where = []
+                base = """
+                    SELECT f.id,
+                        f.full_name,
+                        COALESCE(d.name, 'No Department') AS dept_name,
+                        COALESCE(f.role, '—') AS rank_label
+                    FROM faculty f
+                    LEFT JOIN departments d ON d.id = f.department_id
+                """
 
-                if dept_id is not None:
-                    # exact department match (fast via index)
-                    query = """
-                        SELECT f.id,
-                            f.full_name,
-                            d.name AS dept_name,
-                            COALESCE(f.role, '—') AS rank_label
-                        FROM faculty f
-                        JOIN departments d ON d.id = f.department_id
-                        WHERE f.department_id = ?
-                        ORDER BY f.full_name
-                    """
-                    rows = conn.execute(query, (dept_id,)).fetchall()
-                else:
-                    # LIKE fallback
-                    base = """
-                        SELECT f.id,
-                            f.full_name,
-                            COALESCE(d.name, 'No Department') AS dept_name,
-                            COALESCE(f.role, '—') AS rank_label
-                        FROM faculty f
-                        LEFT JOIN departments d ON f.department_id = d.id
-                    """
-                    params = ()
-                    if term and term.strip():
-                        base += " WHERE f.full_name LIKE ? OR d.name LIKE ?"
-                        params = (f"%{term}%", f"%{term}%")
-                    base += " ORDER BY f.full_name"
-                    rows = conn.execute(base, params).fetchall()
+                # operator scope
+                if self._is_operator():
+                    where.append("f.department_id = ?")
+                    params += [self.ctx.department_id]
 
+                # search
+                if term and term.strip():
+                    where.append("(f.full_name LIKE ? OR COALESCE(d.name,'') LIKE ?)")
+                    like = f"%{term}%"
+                    params += [like, like]
+
+                if where:
+                    base += " WHERE " + " AND ".join(where)
+
+                base += " ORDER BY f.full_name"
+
+                rows = conn.execute(base, tuple(params)).fetchall()
                 for fid, fullname, dept, rank_label in rows:
-                    # store gid in iid so edit/delete can find it
                     self.tree.insert("", "end", iid=str(fid), values=(fullname, dept, rank_label))
+
 
         search_entry.bind("<KeyRelease>", lambda e: load_data(search_entry.get()))
         load_data()
@@ -304,14 +308,25 @@ class AccountsDatabasePage:
                 FROM departments d LEFT JOIN faculty f ON d.id = f.department_id
             """
             params = ()
+            where = []
+
+            if self._is_operator():
+                where.append("d.id = ?")
+                params += self._dept_param()
+
             if term:
-                query += " WHERE d.name = ?"  # exact name -> uses pk/unique lookup fast
-                params = (term.strip(),)
+                where.append("d.name = ?")
+                params += (term.strip(),)
+
+            if where:
+                query += " WHERE " + " AND ".join(where)
+
             query += " GROUP BY d.id, d.name ORDER BY d.name"
 
             with db.connect() as conn:
                 for row in conn.execute(query, params).fetchall():
                     self.tree.insert("", "end", iid=str(row[0]), values=row[1:])
+
 
         search_entry.bind("<KeyRelease>", lambda e: load_data(search_entry.get()))
         load_data()
@@ -338,27 +353,33 @@ class AccountsDatabasePage:
                     FROM blocks b
                     JOIN programs p ON p.id = b.program_id
                 """
+
                 where, params = [], []
+
+                if self._is_operator():
+                    where.append("p.department_id = ?")
+                    params += [self.ctx.department_id]
+
                 if prog_id is not None:
                     where.append("b.program_id = ?"); params.append(prog_id)
-                if ay:  # YYYY-YYYY
+                if ay:
                     where.append("b.academic_year = ?"); params.append(ay)
-                if sem:  # 1st/2nd/Summer
+                if sem:
                     where.append("b.semester = ?"); params.append(sem)
+
+                if not where and term and term.strip():
+                    where.append("(p.code LIKE ? OR b.section LIKE ? OR b.academic_year LIKE ?)")
+                    like = f"%{term}%"
+                    params += [like, like, like]
 
                 if where:
                     query = base + " WHERE " + " AND ".join(where) + " ORDER BY p.code, b.year_level, b.section"
                 else:
-                    if term and term.strip():
-                        query = base + " WHERE p.code LIKE ? OR b.section LIKE ? OR b.academic_year LIKE ? ORDER BY p.code, b.year_level, b.section"
-                        params = (f"%{term}%", f"%{term}%", f"%{term}%")
-                    else:
-                        query = base + " ORDER BY p.code, b.year_level, b.section"
-                        params = []
-
+                    query = base + " ORDER BY p.code, b.year_level, b.section"
 
                 for row in conn.execute(query, params).fetchall():
                     self.tree.insert("", "end", iid=str(row[0]), values=row[1:])
+
 
         search_entry.bind("<KeyRelease>", lambda e: load_data(search_entry.get()))
         load_data()
@@ -400,6 +421,11 @@ class AccountsDatabasePage:
                 """
 
                 where, params = [], []
+
+                if self._is_operator():
+                    where.append("f.department_id = ?")
+                    params += [self.ctx.department_id]
+
                 if subj_id is not None:
                     where.append("ta.subject_id = ?"); params.append(subj_id)
                 if ay:
@@ -407,26 +433,19 @@ class AccountsDatabasePage:
                 if sem:
                     where.append("ta.semester = ?"); params.append(sem)
 
+                if term and term.strip():
+                    like = f"%{term}%"
+                    where.append("(s.code LIKE ? OR s.title LIKE ? OR COALESCE(f.full_name,'') LIKE ? OR COALESCE(b.section,'') LIKE ? OR ta.academic_year LIKE ?)")
+                    params += [like, like, like, like, like]
+
                 if where:
                     query = base + " WHERE " + " AND ".join(where) + " ORDER BY s.code, ta.academic_year, ta.semester, block_label"
                 else:
-                    # Only add LIKE filters if a term actually exists
-                    if term and term.strip():
-                        like = f"%{term}%"
-                        query = base + """
-                            WHERE s.code LIKE ? OR s.title LIKE ?
-                            OR COALESCE(f.full_name,'') LIKE ?
-                            OR COALESCE(b.section,'') LIKE ?
-                            OR ta.academic_year LIKE ?
-                            ORDER BY s.code, ta.academic_year, ta.semester, block_label
-                        """
-                        params = (like, like, like, like, like)
-                    else:
-                        query = base + " ORDER BY s.code, ta.academic_year, ta.semester, block_label"
-                        params = []
+                    query = base + " ORDER BY s.code, ta.academic_year, ta.semester, block_label"
 
                 for row in conn.execute(query, params).fetchall():
                     self.tree.insert("", "end", iid=str(row[0]), values=row[1:])
+
 
 
         search_entry.bind("<KeyRelease>", lambda e: load_data(search_entry.get()))
@@ -447,16 +466,25 @@ class AccountsDatabasePage:
                 FROM programs p
                 JOIN departments d ON d.id = p.department_id
             """
-            params = []
+            where, params = [], []
+
+            if self._is_operator():
+                where.append("p.department_id = ?")
+                params += [self.ctx.department_id]
+
             if term and term.strip():
                 like = f"%{term}%"
-                q = base + " WHERE p.code LIKE ? OR p.name LIKE ? OR d.name LIKE ? ORDER BY p.code"
-                params = (like, like, like)
-            else:
-                q = base + " ORDER BY p.code"
+                where.append("(p.code LIKE ? OR p.name LIKE ? OR d.name LIKE ?)")
+                params += [like, like, like]
+
+            if where:
+                base += " WHERE " + " AND ".join(where)
+
+            base += " ORDER BY p.code"
             with db.connect() as conn:
-                for row in conn.execute(q, params).fetchall():
+                for row in conn.execute(base, params).fetchall():
                     self.tree.insert("", "end", iid=str(row[0]), values=row[1:])
+
 
         search_entry.bind("<KeyRelease>", lambda e: load_data(search_entry.get()))
         load_data()
@@ -479,21 +507,29 @@ class AccountsDatabasePage:
                 JOIN programs p         ON p.id = s.program_id
                 LEFT JOIN departments d ON d.id = s.department_id
             """
-            params = []
+            where, params = [], []
+
+            if self._is_operator():
+                where.append("s.department_id = ?")
+                params += [self.ctx.department_id]
+
             if term and term.strip():
                 like = f"%{term}%"
-                q = base + """
-                    WHERE s.code LIKE ? OR s.title LIKE ? OR p.code LIKE ? OR
-                        CAST(s.year_level AS TEXT) LIKE ? OR s.semester LIKE ? OR
-                        COALESCE(d.name,'') LIKE ?
-                    ORDER BY p.code, s.code
-                """
-                params = (like, like, like, like, like, like)
-            else:
-                q = base + " ORDER BY p.code, s.code"
+                where.append("""(
+                    s.code LIKE ? OR s.title LIKE ? OR p.code LIKE ? OR
+                    CAST(s.year_level AS TEXT) LIKE ? OR s.semester LIKE ? OR
+                    COALESCE(d.name,'') LIKE ?
+                )""")
+                params += [like, like, like, like, like, like]
+
+            if where:
+                base += " WHERE " + " AND ".join(where)
+
+            base += " ORDER BY p.code, s.code"
             with db.connect() as conn:
-                for row in conn.execute(q, params).fetchall():
+                for row in conn.execute(base, params).fetchall():
                     self.tree.insert("", "end", iid=str(row[0]), values=row[1:])
+
 
         search_entry.bind("<KeyRelease>", lambda e: load_data(search_entry.get()))
         load_data()
@@ -508,25 +544,85 @@ class AccountsDatabasePage:
             messagebox.showwarning("No selection", "Select a record to delete.")
             return
 
-        record_id = int(selected[0])  # every row's iid = id
-        confirm = messagebox.askyesno("Confirm Delete", f"Delete record ID {record_id}?")
-        if not confirm:
+        record_id = int(selected[0])  # iid = id
+        if not messagebox.askyesno("Confirm Delete", f"Delete record ID {record_id}?"):
             return
 
-        table_map = {
-            "Faculty": "faculty",
-            "Departments": "departments",
-            "Programs": "programs",
-            "Subjects": "subjects",
-            "Blocks": "blocks",
-            "Teaching Assignments": "teaching_assignments",
-            "Forms": "forms"
-        }
+        tab = self.current_tab
 
-        with db.connect() as conn:
-            conn.execute(f"DELETE FROM {table_map[self.current_tab]} WHERE id=?", (record_id,))
-            conn.commit()
-        self.show_tab(self.current_tab)
+        try:
+            with db.connect() as conn:
+                if tab == "Faculty":
+                    if self._is_operator():
+                        conn.execute("DELETE FROM faculty WHERE id=? AND department_id=?",
+                                    (record_id, self.ctx.department_id))
+                    else:
+                        conn.execute("DELETE FROM faculty WHERE id=?", (record_id,))
+
+                elif tab == "Departments":
+                    if self._is_operator():
+                        # only own dept
+                        conn.execute("DELETE FROM departments WHERE id=? AND id=?",
+                                    (record_id, self.ctx.department_id))
+                    else:
+                        conn.execute("DELETE FROM departments WHERE id=?", (record_id,))
+
+                elif tab == "Programs":
+                    if self._is_operator():
+                        conn.execute("DELETE FROM programs WHERE id=? AND department_id=?",
+                                    (record_id, self.ctx.department_id))
+                    else:
+                        conn.execute("DELETE FROM programs WHERE id=?", (record_id,))
+
+                elif tab == "Subjects":
+                    if self._is_operator():
+                        conn.execute("DELETE FROM subjects WHERE id=? AND department_id=?",
+                                    (record_id, self.ctx.department_id))
+                    else:
+                        conn.execute("DELETE FROM subjects WHERE id=?", (record_id,))
+
+                elif tab == "Blocks":
+                    if self._is_operator():
+                        conn.execute("""
+                            DELETE FROM blocks
+                            WHERE id = ?
+                            AND EXISTS (
+                                SELECT 1 FROM programs p
+                                WHERE p.id = blocks.program_id
+                                    AND p.department_id = ?
+                            )
+                        """, (record_id, self.ctx.department_id))
+                    else:
+                        conn.execute("DELETE FROM blocks WHERE id=?", (record_id,))
+
+                elif tab == "Teaching Assignments":
+                    if self._is_operator():
+                        conn.execute("""
+                            DELETE FROM teaching_assignments
+                            WHERE id = ?
+                            AND EXISTS (
+                                SELECT 1
+                                FROM teaching_assignments ta
+                                JOIN faculty f ON f.id = ta.teacher_id
+                                WHERE ta.id = ? AND f.department_id = ?
+                            )
+                        """, (record_id, record_id, self.ctx.department_id))
+                    else:
+                        conn.execute("DELETE FROM teaching_assignments WHERE id=?", (record_id,))
+                else:
+                    messagebox.showerror("Unsupported", f"Delete not configured for {tab}")
+                    return
+
+                if conn.total_changes == 0 and self._is_operator():
+                    messagebox.showwarning("Not allowed", "You can only delete records in your department.")
+                    return
+
+                conn.commit()
+
+            self.show_tab(self.current_tab)
+        except Exception as e:
+            messagebox.showerror("DB Error", str(e))
+
 
 
     # ---------------- Export ---------------- #
@@ -719,39 +815,134 @@ class AccountsDatabasePage:
 
     def build_department_form(self, parent, mode):
         CTkLabel(parent, text="Department Form", font=("Arial", 18, "bold"),
-                    text_color="#691612").pack(pady=10)
+                text_color="#691612").pack(pady=10)
 
+        # --- Department Name ---
         name_entry = CTkEntry(parent, placeholder_text="Department Name")
-        name_entry.pack(fill="x", padx=20, pady=10)
+        name_entry.pack(fill="x", padx=20, pady=(10, 6))
 
+        # --- Dean dropdown ---
+        CTkLabel(parent, text="Dean (must belong to this department)",
+                font=("Arial", 12)).pack(fill="x", padx=20, pady=(4, 0))
+        dean_var = StringVar()
+        dean_menu = CTkOptionMenu(parent, variable=dean_var, values=["(None for now)"])
+        dean_menu.pack(fill="x", padx=20, pady=6)
+        dean_var.set("(None for now)")
+
+        # Helpers
+        def _faculty_in_department(dept_id: int):
+            with db.connect() as conn:
+                return conn.execute("""
+                    SELECT id, full_name
+                    FROM faculty
+                    WHERE department_id = ?
+                    ORDER BY full_name
+                """, (dept_id,)).fetchall()
+
+        def _all_faculty_with_dept_label():
+            with db.connect() as conn:
+                return conn.execute("""
+                    SELECT f.id, f.full_name, COALESCE(d.name, '—') as dept_name
+                    FROM faculty f
+                    LEFT JOIN departments d ON d.id = f.department_id
+                    ORDER BY f.full_name
+                """).fetchall()
+
+        # Prefill (Edit)
         record_id = None
         if mode == "edit" and self.tree:
             selected = self.tree.selection()
             if not selected:
                 messagebox.showwarning("No selection", "Select a department to edit.")
-                self.sidepanel.destroy(); return
+                self.sidepanel.destroy()
+                return
 
-            record_id = int(selected[0])                          # ← use iid
-            name, count = self.tree.item(selected[0], "values")   # ← visibles only
+            record_id = int(selected[0])  # iid as id
+            name, _count = self.tree.item(selected[0], "values")
             name_entry.insert(0, name)
 
+            # Load faculty limited to this department
+            rows = _faculty_in_department(record_id)
+            dean_options = ["(None)"] + [r[1] for r in rows]
+            dean_menu.configure(values=dean_options)
+            dean_var.set("(None)")
+
+            # Preselect current dean if any
+            with db.connect() as conn:
+                row = conn.execute("SELECT dean_id FROM departments WHERE id=?", (record_id,)).fetchone()
+            if row and row[0]:
+                dean_id = row[0]
+                id_to_name = {fid: fname for fid, fname in rows}
+                dean_var.set(id_to_name.get(dean_id, "(None)"))
+
+        else:
+            # ADD mode: user can pick None (recommended) or any faculty (DB trigger enforces department match)
+            rows = _all_faculty_with_dept_label()
+            dean_options = ["(None for now)"] + [f"{fname}  —  {dept}" for _, fname, dept in rows]
+            dean_menu.configure(values=dean_options)
+            dean_var.set("(None for now)")
 
         def submit():
             try:
+                dept_name = name_entry.get().strip()
+                if not dept_name:
+                    messagebox.showerror("Invalid Input", "Department name is required.")
+                    return
+
                 with db.connect() as conn:
                     if mode == "add":
-                        conn.execute("INSERT INTO departments (name) VALUES (?)", (name_entry.get().strip(),))
+                        # 1) create department (without dean by default)
+                        conn.execute("INSERT INTO departments (name) VALUES (?)", (dept_name,))
+                        conn.commit()
+
+                        # 2) try to set dean if the user selected a faculty
+                        if dean_var.get() != "(None for now)":
+                            # map display back to faculty id
+                            all_rows = _all_faculty_with_dept_label()
+                            display_to_id = {f"{fname}  —  {dept}": fid for fid, fname, dept in all_rows}
+                            chosen = dean_var.get()
+                            dean_id = display_to_id.get(chosen)
+
+                            # fetch the new department id
+                            new_id = conn.execute("SELECT id FROM departments WHERE name=?", (dept_name,)).fetchone()[0]
+
+                            # This UPDATE will succeed only if the chosen faculty already belongs to this dept (DB trigger)
+                            try:
+                                conn.execute("UPDATE departments SET dean_id=? WHERE id=?", (dean_id, new_id))
+                                conn.commit()
+                            except Exception as e:
+                                # likely trigger: "Dean must belong to the same department"
+                                messagebox.showwarning(
+                                    "Dean not set",
+                                    "The selected dean does not belong to this department yet.\n"
+                                    "Department was created successfully; set the dean after assigning the faculty to this department."
+                                )
+
                     else:
-                        conn.execute("UPDATE departments SET name=? WHERE id=?",
-                                        (name_entry.get().strip(), record_id))
-                    conn.commit()
+                        # EDIT: update name and dean_id (if selected)
+                        # resolve dean choice → faculty id (limited to same dept)
+                        if dean_var.get() in ("(None)", "(None for now)"):
+                            dean_id = None
+                        else:
+                            rows = _faculty_in_department(record_id)
+                            name_to_id = {fname: fid for fid, fname in rows}
+                            dean_id = name_to_id.get(dean_var.get())
+                            if dean_id is None and dean_var.get():
+                                messagebox.showerror("Invalid Dean", "Please choose a dean from this department.")
+                                return
+
+                        conn.execute("UPDATE departments SET name=?, dean_id=? WHERE id=?",
+                                    (dept_name, dean_id, record_id))
+                        conn.commit()
+
                 self.sidepanel.destroy()
                 self.show_tab("Departments")
+
             except Exception as e:
                 messagebox.showerror("DB Error", str(e))
 
-        CTkButton(parent, text="Save", fg_color="#691612",
-                    command=submit).pack(pady=20)
+        CTkButton(parent, text="Save", fg_color="#691612", command=submit).pack(pady=20)
+
 
     def build_block_form(self, parent, mode):
         CTkLabel(parent, text="Block Form", font=("Arial", 18, "bold"),

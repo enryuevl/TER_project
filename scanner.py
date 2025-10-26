@@ -20,25 +20,24 @@ class WIAScanner:
     
    
     def __init__(self, teacher_name=None, output_dir=None):
-        documents_folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Scan")
+        # existing code...
+        if output_dir:
+            self.output_dir = output_dir
+        else:
+            documents_folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Scan")
+            self.output_dir = os.path.join(documents_folder, teacher_name) if teacher_name else documents_folder
 
-        # If teacher is given, use teacher folder
-        if teacher_name:
-            output_dir = os.path.join(documents_folder, teacher_name)
-
-        # If still None, default to Scan root
-        if output_dir is None:
-            output_dir = documents_folder
-
-        self.output_dir = output_dir
         self.counter_file = os.path.join(self.output_dir, "counter.txt")
-
         os.makedirs(self.output_dir, exist_ok=True)
 
         self.device = None
         self.connection = None
         self.status_prop = None
 
+        # NEW: a safe, readable prefix based on teacher_name
+        self.teacher_prefix = None
+        if teacher_name:
+            self.teacher_prefix = re.sub(r'[^A-Za-z0-9]+', '_', teacher_name).strip('_')
         
     def initialize(self):
         """Initialize WIA and connect to the first available scanner"""
@@ -110,43 +109,79 @@ class WIAScanner:
         """Scan all pages from ADF"""
         if not self.device:
             raise Exception("Scanner not initialized. Call initialize() first.")
-            
-        counter = DocumentCounter(self.counter_file)
+
+        # If you want to pass a custom start index, you can do it here (None = auto-derive)
+        counter = DocumentCounter(
+            output_dir=self.output_dir,
+            counter_file=self.counter_file,
+            start_index=None,
+            prefix=self.teacher_prefix  # comment this if you want plain "001.bmp"
+        )
+
         pages_scanned = 0
-        
         print("\n📄 Starting batch scan from ADF...")
-        
+
         while self.has_more_pages():
             output_file = counter.get_next_filename()
             if not self.scan_page(output_file):
                 break
             pages_scanned += 1
-        
+
         counter.save()
         return pages_scanned
 
+
 class DocumentCounter:
-    def __init__(self, counter_file):
+    def __init__(self, output_dir, counter_file, start_index=None, prefix=None):
+        self.output_dir = output_dir
         self.counter_file = counter_file
-        self.current_count = self._load_counter()
-    
-    def _load_counter(self):
+        self.prefix = prefix  # e.g., "Juan_Dela_Cruz"
+        self.current_count = self._load_counter(start_index)
+
+    def _load_counter(self, start_index):
+        # 1) Try counter.txt
         try:
             if os.path.exists(self.counter_file):
                 with open(self.counter_file, "r") as f:
-                    return int(f.read().strip())
+                    val = int(f.read().strip())
+                    return max(1, val)
         except (ValueError, IOError):
             pass
-        return 1
-    
+
+        # 2) Derive from existing BMP names in folder if counter.txt isn’t usable
+        max_n = 0
+        try:
+            for entry in os.scandir(self.output_dir):
+                if not entry.name.lower().endswith(".bmp"):
+                    continue
+                # Match trailing number before .bmp; works for "12.bmp" or "Teacher_012.bmp"
+                m = re.search(r'(\d+)\.bmp$', entry.name, flags=re.IGNORECASE)
+                if m:
+                    max_n = max(max_n, int(m.group(1)))
+        except Exception:
+            pass
+
+        if start_index is not None:
+            # If caller passed a start index, respect it but never go backwards
+            return max(max_n + 1, int(start_index))
+        return max_n + 1
+
     def get_next_filename(self):
-        filename = f"{self.current_count}.bmp" # Using BMP for faster saves
+        # Use zero-padded numbering; include prefix if provided
+        if self.prefix:
+            filename = f"{self.current_count:03d}.bmp"
+        else:
+            filename = f"{self.current_count:03d}.bmp"
         self.current_count += 1
         return filename
-    
+
     def save(self):
-        with open(self.counter_file, "w") as f:
+        # Write atomically to avoid corruption
+        tmp = self.counter_file + ".tmp"
+        with open(tmp, "w") as f:
             f.write(str(self.current_count))
+        os.replace(tmp, self.counter_file)
+
 
 # (only runs if this file is run directly)
 if __name__ == "__main__":

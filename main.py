@@ -13,15 +13,25 @@ from scanner import WIAScanner
 import threading
 import datetime
 import os
-
+# ── module Imports ──
 from accounts_page import AccountsDatabasePage
 from scan_page import ScanPage
 from results_page import ResultsPage
 from Dean_evaluation_form import DeanEvaluationForm
 from home_page import HomePage
+from dataclasses import dataclass  
 
 
-def create_app(role: str, username: str):
+
+@dataclass
+class AppContext:
+    role: str
+    username: str
+    department_id: int | None
+
+
+
+def create_app(role: str, username: str, department_id: int | None):    
     """Start the main ATS window with role-based navigation."""
     # Initialize database (creates Documents/MyWork/ter_db.sqlite on first run)
     db.initialize_database()
@@ -132,7 +142,9 @@ def create_app(role: str, username: str):
 
     # ── Navigation
     sidebar_buttons = {}
-
+    # Set global app context
+    ctx = AppContext(role=role, username=username, department_id=department_id)
+    
     def add_nav_button(name, action):
         btn = CTkButton(
             master=sidebar_frame,
@@ -157,7 +169,7 @@ def create_app(role: str, username: str):
         "Scan": lambda: ScanPage(main_frame, processed_results),
         "Admin": lambda: DeanEvaluationForm(main_frame, processed_results),
         "Results": lambda: ResultsPage(main_frame, processed_results),
-        "Database": lambda: AccountsDatabasePage(main_frame),
+        "Database": lambda: AccountsDatabasePage(main_frame, ctx),
     }
 
     # Role-based visibility
@@ -165,9 +177,9 @@ def create_app(role: str, username: str):
     if role == "admin":
         allowed = {"Dashboard", "Scan", "Admin", "Results", "Database"}
     elif role == "dean":
-        allowed = {"Dashboard", "Scan", "Admin", "Results"}  # hide Database
+        allowed = {"Dashboard", "Scan", "Admin", "Results", "Database"}  # hide Database
     else:  # operator or unknown
-        allowed = {"Dashboard", "Scan", "Results"}  # hide Admin + Database
+        allowed = {"Dashboard", "Scan", "Results", "Database"}  # hide Admin + Database
 
     for name, action in nav_actions.items():
         if name in allowed:
@@ -202,4 +214,4 @@ def create_app(role: str, username: str):
 
 # Standalone run (double-click friendly): opens as admin
 if __name__ == "__main__":
-    create_app(role="admin", username="Admin")
+    create_app(role="admin", username="Admin", department_id=1)

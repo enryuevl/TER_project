@@ -11,7 +11,8 @@ from scanner import WIAScanner
 import db
 import pythoncom
 from utils import set_sidebar_state
-
+import utils
+import datetime
 
 class ScanPage:
     def __init__(self, master, processed_results):
@@ -20,6 +21,7 @@ class ScanPage:
         self.processed_results = processed_results
         self.last_processed_times = {}
         self.annotated_cache = {}  # Cache for annotated images
+        self.current_scan_dir = None
         self.load_results()
 
         # Tkinter variables
@@ -136,6 +138,8 @@ class ScanPage:
             width=250, height=35
         )
         self.rater_dropdown.pack(padx=15, pady=(10, 5))
+        self.teacher_dropdown.configure(command=lambda _: self._refresh_teacher_progress())
+
 
 
     def _build_results_panel(self, parent):
@@ -174,7 +178,7 @@ class ScanPage:
         preview_frame.pack(fill="both", expand=True)
 
         CTkLabel(preview_frame, text="Document Preview",
-                 font=('Montserrat', 18, 'bold'), text_color="#334155").pack(pady=(15, 0))
+                font=('Montserrat', 18, 'bold'), text_color="#334155").pack(pady=(15, 0))
 
         self.document_listbox = CTkOptionMenu(
             preview_frame, values=["No documents loaded"],
@@ -183,10 +187,22 @@ class ScanPage:
         )
         self.document_listbox.pack(padx=20, pady=10, fill="x")
 
-        self.img_label = CTkLabel(preview_frame, text="No image loaded",
-                                  font=('Montserrat', 14),
-                                  fg_color="#555555", width=400, height=500)
+        # ⬇️ Restore the preview label (this is what was missing)
+        self.img_label = CTkLabel(
+            preview_frame, text="No image loaded",
+            font=('Montserrat', 14), fg_color="#555555",
+            width=400, height=500
+        )
         self.img_label.pack(padx=10, pady=20, fill="both", expand=True)
+
+        # When user picks a file, update the preview
+        self.document_listbox.configure(
+            command=lambda choice: self.display_image(
+                choice, self.teacher_var.get(), base_dir=self.current_scan_dir
+            )
+        )
+
+
 
     # ---------------- DB HANDLERS ---------------- #
     def load_teachers(self):
@@ -209,6 +225,38 @@ class ScanPage:
         except Exception as e:
             messagebox.showerror("DB Error", str(e))
 
+    #
+    def _infer_ay_and_sem_from_today(self):
+        now = datetime.datetime.now()
+        y, m = now.year, now.month
+        if 8 <= m <= 12:
+            return f"{y}-{y+1}", "1st"
+        elif 1 <= m <= 6:
+            return f"{y-1}-{y}", "2nd"
+        else:
+            return f"{y-1}-{y}", "Summer"
+
+    def _get_teacher_department(self, teacher_full_name: str) -> str | None:
+        try:
+            with db.connect() as conn:
+                row = conn.execute("""
+                    SELECT d.name
+                    FROM faculty f
+                    JOIN departments d ON d.id = f.department_id
+                    WHERE f.full_name = ?
+                """, (teacher_full_name,)).fetchone()
+            return row[0] if row else None
+        except Exception:
+            return None
+
+    def _build_scan_dir(self, teacher_full_name: str) -> str:
+        dept = self._get_teacher_department(teacher_full_name) or "UnknownDept"
+        ay, sem = self._infer_ay_and_sem_from_today()
+        folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Scan", dept, ay, sem, teacher_full_name)
+        os.makedirs(folder, exist_ok=True)
+        return folder
+
+
 
     # ---------------- SCANNER ACTIONS ---------------- #
     def start_scan(self):
@@ -216,15 +264,29 @@ class ScanPage:
             try:
                 pythoncom.CoInitialize()
                 teacher = self.teacher_var.get()
+                scan_dir = self._build_scan_dir(teacher)
+                self.current_scan_dir = scan_dir
+                start_idx = self._next_scan_index(scan_dir)
 
-                scanner = WIAScanner(teacher_name=teacher)
+                # session log: scan_started
+                user = utils.get_current_user()
+                db.log_activity(
+                    action="scan_started",
+                    actor_name=user.get("name"),
+                    actor_role=user.get("role"),
+                    department_id=user.get("department_id"),
+                    teacher_name=teacher,
+                    rater_type=self.rater_var.get() if hasattr(self, "rater_var") else None
+                )
+
+                scanner = WIAScanner(teacher_name=teacher, output_dir=scan_dir)
                 info = scanner.initialize()
                 self.status_label.configure(text=f"Scanner detected: {info['name']}")
 
                 pages = scanner.scan_batch()
 
                 if pages > 0:
-                    results, qc_errors = self.process_work_folder(teacher)
+                    results, qc_errors = self.process_work_folder(teacher, base_dir=scan_dir)
 
                     # Show one message if there were any rejected pages
                     if qc_errors:
@@ -232,36 +294,57 @@ class ScanPage:
                         messagebox.showerror(
                             "Incomplete / Blank Pages Detected",
                             "The following documents have missing keys and were discarded:\n\n"
-                            + "\n".join(lines) +
-                            "\n\nPlease rescan those page(s)."
+                            + "\n".join(lines)
+                            + "\n\nPlease rescan those page(s)."
                         )
 
                     if results:
+                        # merge into in-memory results + persist
                         self.processed_results.update(results)
                         self.save_results()
+                        self._refresh_teacher_progress()
 
-                        # 🔑 Show preview for this rater only (if any clean files)
-                        teacher_files = results.get(teacher, {}).get(self.rater_var.get(), [])
+
+                        # preview only for current rater (if any clean files)
+                        rater = self.rater_var.get() if hasattr(self, "rater_var") else "Unknown"
+                        teacher_files = results.get(teacher, {}).get(rater, [])
                         if teacher_files:
                             self.update_preview(teacher_files)
 
-                    # If everything was bad, tell the user
+                    # session log: scan_completed
+                    db.log_activity(
+                        action="scan_completed",
+                        actor_name=user.get("name"),
+                        actor_role=user.get("role"),
+                        department_id=user.get("department_id"),
+                        teacher_name=teacher,
+                        rater_type=self.rater_var.get() if hasattr(self, "rater_var") else None,
+                        details={"pages_scanned": int(pages)}
+                    )
+
+                    # status label
                     if not results and not qc_errors:
                         self.status_label.configure(text="No new documents found.")
+                        self.set_controls_state("normal")
+                        set_sidebar_state("normal")
                     else:
                         self.status_label.configure(text="Processing complete!")
-
+                        self.set_controls_state("normal")
+                        set_sidebar_state("normal")
                 else:
                     self.status_label.configure(text="No documents found.")
+                    self.set_controls_state("normal")
+                    set_sidebar_state("normal")
 
             except Exception as e:
                 messagebox.showerror("Scan Error", str(e))
             finally:
                 pythoncom.CoUninitialize()
                 self.set_controls_state("normal")
-                set_sidebar_state
                 if hasattr(self, "wait_popup") and self.wait_popup.winfo_exists():
                     self.wait_popup.destroy()
+
+
 
 
         # ✅ disable controls and show popup
@@ -300,13 +383,17 @@ class ScanPage:
 
     def scan_existing(self):
         teacher = self.teacher_var.get()
-        results = self.process_work_folder(teacher)
-        self.save_results_to_json()
+        scan_dir = self._build_scan_dir(teacher)
+        self.current_scan_dir = scan_dir
+        results, qc_errors = self.process_work_folder(teacher, base_dir=scan_dir)
+        if qc_errors:
+            lines = [f"• {fname} → {reason}" for fname, reason in qc_errors]
+            messagebox.showerror("Incomplete / Blank Pages Detected", "\n".join(lines))
         if results:
             self.processed_results.update(results)
-            
-            self.update_preview(results.get(teacher, []))
-            
+            rater = self.rater_var.get() if hasattr(self, "rater_var") else "Unknown"
+            self.update_preview(results.get(teacher, {}).get(rater, []))
+
     def clear_scan(self):
         self.img_label.configure(image=None, text="No image loaded")
         self.document_listbox.configure(values=["No documents loaded"])
@@ -339,17 +426,19 @@ class ScanPage:
         if not self.processed_results:
             messagebox.showwarning("Warning", "No scan found.")
             return
-        self.progress_bar.set(1.0)
+        self._refresh_teacher_progress()
         messagebox.showinfo("Done", "Evaluation processed successfully!")
 
-    def process_work_folder(self, teacher):
-        folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Scan", teacher)
+    def process_work_folder(self, teacher, base_dir=None):
+        folder = base_dir or self._build_scan_dir(teacher)
+        # key by absolute folder path so AY/Sem/Dept are naturally separated
+        key = os.path.abspath(folder)
         if not os.path.exists(folder):
             os.makedirs(folder, exist_ok=True)
-
         new_results = []
-        qc_errors = []  # collect (filename, message) for batch popup
-        last_time = self.last_processed_times.get(teacher, 0)
+        qc_errors = []
+        last_time = self.last_processed_times.get(key, 0)
+
 
         # --- use dropdown rater type ---
         rater = self.rater_var.get() if hasattr(self, "rater_var") else "Unknown"
@@ -390,8 +479,8 @@ class ScanPage:
 
             # ---- Keep only clean pages ----
             new_results.append((file.name, result_dict))
-            self.annotated_cache[file.name] = annotated_img
-            self.last_processed_times[teacher] = max(last_time, file.stat().st_mtime)
+            self.annotated_cache[os.path.join(folder, file.name)] = annotated_img
+            self.last_processed_times[key] = max(last_time, file.stat().st_mtime)
 
         # ✅ Special rule: only one "Self" entry per teacher
         if rater == "Self":
@@ -425,11 +514,6 @@ class ScanPage:
         return ({teacher: {rater: new_results}} if new_results else {}), qc_errors
 
 
-
-
-    
-
-    
 
     # ---------------- RESULT HANDLERS ---------------- #
 
@@ -489,24 +573,53 @@ class ScanPage:
         if not self.processed_results:
             messagebox.showwarning("Warning", "Nothing to save.")
             return
-        path = filedialog.asksaveasfilename(defaultextension=".csv",
-                                            filetypes=[("CSV", "*.csv"), ("Excel", "*.xlsx")])
-        if not path: return
+
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv"), ("Excel", "*.xlsx")]
+        )
+        if not path:
+            return
+
         try:
             rows = []
-            for teacher, docs in self.processed_results.items():
-                for file, result in docs:
-                    row = {"Teacher": teacher, "File": file}
-                    for sec, sec_data in result.items():
-                        for rownum, score in sec_data.items():
-                            row[f"{sec} Row {rownum}"] = score
-                    rows.append(row)
+            for teacher, rater_dict in self.processed_results.items():
+                # normalize old flat format -> wrap as Unknown
+                if isinstance(rater_dict, list):
+                    rater_dict = {"Unknown": rater_dict}
+
+                for rater, docs in rater_dict.items():
+                    for file, result in docs:
+                        row = {"Teacher": teacher, "Rater": rater, "File": file}
+                        for sec, sec_data in result.items():
+                            for rownum, score in sec_data.items():
+                                row[f"{sec} Row {rownum}"] = score
+                        rows.append(row)
+
             df = pd.DataFrame(rows)
-            if path.endswith(".csv"): df.to_csv(path, index=False)
-            else: df.to_excel(path, index=False)
+            if path.endswith(".csv"):
+                df.to_csv(path, index=False)
+            else:
+                df.to_excel(path, index=False)
+
             messagebox.showinfo("Saved", f"Results saved to {os.path.basename(path)}")
         except Exception as e:
             messagebox.showerror("Save Error", str(e))
+
+    def _next_scan_index(self, folder: str) -> int:
+        """Return next integer N so the next file can be named ..._{N:03d}.bmp."""
+        import re
+        max_n = 0
+        if not os.path.exists(folder):
+            return 1
+        for entry in os.scandir(folder):
+            if not entry.name.lower().endswith(".bmp"):
+                continue
+            # grab the last number before .bmp (works with page_12.bmp or Teacher_012.bmp)
+            m = re.search(r'(\d+)(?=\.bmp$)', entry.name, flags=re.IGNORECASE)
+            if m:
+                max_n = max(max_n, int(m.group(1)))
+        return max_n + 1
 
      
     def load_results(self, path=None):
@@ -545,37 +658,47 @@ class ScanPage:
     def update_preview(self, teacher_results):
         if not teacher_results:
             self.document_listbox.configure(values=["No documents loaded"])
+            self.document_listbox.set("No documents loaded")
             self.img_label.configure(image=None, text="No image loaded")
             return
 
-        # list of just filenames
         values = [fname for fname, *_ in teacher_results]
         self.document_listbox.configure(values=values)
         self.document_listbox.set(values[0])
 
-        # show first file in list
-        self.display_image(values[0], self.teacher_var.get())
+        # ensure command is bound after repopulating
+        self.document_listbox.configure(
+            command=lambda choice: self.display_image(
+                choice, self.teacher_var.get(), base_dir=self.current_scan_dir
+            )
+        )
 
-    def display_image(self, filename, teacher):
+        # load the first image immediately
+        self.display_image(values[0], self.teacher_var.get(), base_dir=self.current_scan_dir)
+
+
+
+    def display_image(self, filename, teacher, base_dir=None):
         try:
-            if filename in self.annotated_cache:
-                # ✅ Use session-only annotated version
-                rgb_img = cv2.cvtColor(self.annotated_cache[filename], cv2.COLOR_BGR2RGB)
+            folder = base_dir or self.current_scan_dir or self._build_scan_dir(teacher)
+            full_path = os.path.join(folder, filename)
+
+            if full_path in self.annotated_cache:
+                rgb_img = cv2.cvtColor(self.annotated_cache[full_path], cv2.COLOR_BGR2RGB)
                 pil_img = Image.fromarray(rgb_img).resize((400, 500), Image.Resampling.LANCZOS)
             else:
-                # fallback to raw file
-                folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Scan", teacher)
-                path = os.path.join(folder, filename)
-                pil_img = Image.open(path).resize((400, 500), Image.Resampling.LANCZOS)
+                pil_img = Image.open(full_path).resize((400, 500), Image.Resampling.LANCZOS)
 
             img_tk = CTkImage(light_image=pil_img, dark_image=pil_img, size=(400, 500))
             self.img_label.configure(image=img_tk, text="")
-            self.img_label.image = img_tk
+            self.img_label.image = img_tk  # prevent GC
         except Exception as e:
             self.img_label.configure(image=None, text="Error loading image")
             messagebox.showerror("Image Error", str(e))
 
+
     # ---------------- OTHERS ---------------- #
+  
     def set_controls_state(self, state="normal"):
         """Enable or disable all buttons/menus in the scan page."""
         widgets = [
@@ -590,3 +713,70 @@ class ScanPage:
                 w.configure(state=state)
             except Exception:
                 pass
+            
+    def _get_expected_total_for_teacher(self, teacher_full_name: str) -> int:
+        """Sum of expected_students across ALL teaching_assignments for the teacher."""
+        try:
+            with db.connect() as conn:
+                row = conn.execute("""
+                    SELECT COALESCE(SUM(ta.expected_students), 0)
+                    FROM teaching_assignments ta
+                    JOIN faculty f ON f.id = ta.teacher_id
+                    WHERE f.full_name = ?
+                """, (teacher_full_name,)).fetchone()
+            return int(row[0] or 0)
+        except Exception:
+            return 0
+
+    def _get_completed_student_scans_current_period(self, teacher_full_name: str) -> int:
+        """
+        Count Student scans for this teacher that are saved and belong to the CURRENT AY/Sem folder.
+        We ensure the file exists under the current scan dir to scope to the period.
+        """
+        # where results.pkl is stored
+        db_path = db.get_default_db_path()
+        base_dir = os.path.dirname(db_path)
+        pkl_path = os.path.join(base_dir, "results.pkl")
+
+        if not os.path.exists(pkl_path):
+            return 0
+
+        try:
+            with open(pkl_path, "rb") as f:
+                data = pickle.load(f)
+            results = data.get("results", {})
+        except Exception:
+            return 0
+
+        teacher_bucket = results.get(teacher_full_name, {})
+        student_list = teacher_bucket.get("Student", [])
+        if isinstance(teacher_bucket, list):
+            # normalize legacy structure (shouldn’t happen here, but safe)
+            student_list = []
+
+        # Only count files that live in THIS period's folder to avoid cross-term inflation
+        current_dir = self._build_scan_dir(teacher_full_name)
+        count = 0
+        for fname, _payload in student_list:
+            if os.path.exists(os.path.join(current_dir, fname)):
+                count += 1
+        return count
+
+    def _refresh_teacher_progress(self):
+        """Recompute and update the progress bar + label for the selected teacher."""
+        teacher = self.teacher_var.get()
+        if not teacher or teacher in ("Loading...", "No teachers found"):
+            self.progress_bar.set(0)
+            self.scan_info_label.configure(text="No teacher selected")
+            return
+
+        total = self._get_expected_total_for_teacher(teacher)
+        completed = self._get_completed_student_scans_current_period(teacher)
+        remaining = max(total - completed, 0)
+
+        progress = (completed / total) if total > 0 else 0.0
+        self.progress_bar.set(progress)
+        # e.g., “12 / 30 completed • 18 remaining”
+        self.scan_info_label.configure(
+            text=f"{completed} / {total} completed • {remaining} remaining"
+        )

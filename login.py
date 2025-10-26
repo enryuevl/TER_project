@@ -4,6 +4,7 @@ from PIL import Image, UnidentifiedImageError
 import os, sqlite3, hashlib, hmac, base64
 import bcrypt
 import main
+import utils
 
 # ── Theme / Palette
 PRIMARY = "#691612"
@@ -61,7 +62,6 @@ def db_connect():
 
 
 class LoginApp(ctk.CTk):
-    
     def __init__(self, logo_path: str | None = "logo.png"):
         super().__init__()
 
@@ -411,7 +411,7 @@ class LoginApp(ctk.CTk):
         try:
             with db_connect() as conn:
                 user = conn.execute(
-                    "SELECT id, username, password_hash, role, is_active FROM users WHERE username=?",
+                    "SELECT id, username, password_hash, role, is_active, department_id FROM users WHERE username=?",
                     (username,)
                 ).fetchone()
                 if not user:
@@ -432,13 +432,15 @@ class LoginApp(ctk.CTk):
             return
 
         role = user["role"]
-        self._redirect_to_role(role, username)
+        dept_id = user["department_id"]  # may be None for admin
+        utils.set_current_user(name=username, role=role, department_id=dept_id)
+        self._redirect_to_role(role, username, dept_id)
 
     # ---------- Role redirect (placeholder) ----------
-    def _redirect_to_role(self, role: str, username: str):
+    def _redirect_to_role(self, role: str, username: str, department_id: int | None):
         self.destroy()
-        
-        main.create_app(role=role, username=username)
+        main.create_app(role=role, username=username, department_id=department_id)
+
 
     # ---------- Shared helpers ----------
     def _toggle_pw(self, entry: ctk.CTkEntry, kind: str):

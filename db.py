@@ -3,6 +3,7 @@ import sqlite3
 from typing import Optional
 import shutil
 from datetime import datetime
+import json
 
 DB_FILENAME = "ter_db2.sqlite"
 PKL_FILENAME = "results.pkl"  
@@ -281,6 +282,71 @@ def _colnames(conn, table: str) -> set:
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
     return {r[1] for r in rows}  # column names
 
+# --- Activity Logs -----------------------------------------------------------
+
+
+def _ensure_activity_logs(conn: sqlite3.Connection) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS activity_logs (
+            id             INTEGER PRIMARY KEY,
+            occurred_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            action         TEXT NOT NULL,           -- e.g. 'scan_started','scan_completed','export_summary'
+            actor_name     TEXT,
+            actor_role     TEXT,
+            department_id  INTEGER,
+            teacher_name   TEXT,
+            rater_type     TEXT,
+            file_name      TEXT,
+            details_json   TEXT,
+            FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_logs_time ON activity_logs(occurred_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_logs_action ON activity_logs(action)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_logs_actor  ON activity_logs(actor_name)")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_logs_teacher ON activity_logs(teacher_name)")
+    conn.commit()
+
+def log_activity(
+    action: str,
+    actor_name: str | None = None,
+    actor_role: str | None = None,
+    department_id: int | None = None,
+    teacher_name: str | None = None,
+    rater_type: str | None = None,
+    file_name: str | None = None,
+    details: dict | None = None,
+) -> None:
+    try:
+        with connect() as conn:
+            conn.execute("""
+                INSERT INTO activity_logs
+                (action, actor_name, actor_role, department_id, teacher_name, rater_type, file_name, details_json)
+                VALUES (?,?,?,?,?,?,?,?)
+            """, (
+                action,
+                actor_name,
+                actor_role,
+                department_id,
+                teacher_name,
+                rater_type,
+                file_name,
+                json.dumps(details or {})
+            ))
+            conn.commit()
+    except Exception as e:
+        print(f"⚠️ log_activity failed: {e}")
+
+def fetch_activity_logs(limit: int = 200, where: str = "", params: tuple = ()):
+    with connect() as conn:
+        q = "SELECT occurred_at, action, actor_name, actor_role, teacher_name, rater_type, file_name, details_json FROM activity_logs"
+        if where:
+            q += " WHERE " + where
+        q += " ORDER BY occurred_at DESC LIMIT ?"
+        rows = conn.execute(q, params + (limit,)).fetchall()
+    return rows
+
+
 def migrate_to_current_schema(conn: sqlite3.Connection) -> None:
     # 1) subjects: ensure 'title' exists (copy from legacy 'name' if present)
     cols = _colnames(conn, "subjects")
@@ -299,6 +365,7 @@ def migrate_to_current_schema(conn: sqlite3.Connection) -> None:
     if "expected_students" not in cols:
         conn.execute("ALTER TABLE teaching_assignments ADD COLUMN expected_students INTEGER DEFAULT 0")
     conn.commit()
+    _ensure_activity_logs(conn)
 
 
 

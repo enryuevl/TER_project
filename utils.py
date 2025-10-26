@@ -4,6 +4,17 @@ import numpy as np
 import cv2
 import numpy as np
 
+# --- Current user context for logging ----------------------------------------
+CURRENT_USER = {"name": None, "role": None, "department_id": None}
+
+def set_current_user(name: str | None, role: str | None, department_id: int | None = None):
+    global CURRENT_USER
+    CURRENT_USER = {"name": name, "role": role, "department_id": department_id}
+
+def get_current_user():
+    return CURRENT_USER
+
+# --- Line and shaded area detection utilities ---------------------------------
 def detect_vertical_lines(section_img, section_name="Section"):
     """
     Process the section image to detect vertical lines.
