@@ -1,7 +1,9 @@
 import customtkinter as ctk
 from tkinter import messagebox
 from PIL import Image, UnidentifiedImageError
-import os, re
+import os, sqlite3, hashlib, hmac, base64
+import bcrypt
+import main
 
 # ── Theme / Palette
 PRIMARY = "#691612"
@@ -12,23 +14,65 @@ TEXT = "#1F2937"
 TEXT_MUTED = "#6B7280"
 BORDER = "#E5E5E5"
 
-ROLES = ["Dean", "Evaluator", "Faculty"]   # Student removed as requested
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# ── Roles shown in UI → saved to DB in lowercase
+ROLES_UI = ["Admin", "Dean", "Operator"]
+ROLE_MAP = {"Admin": "admin", "Dean": "dean", "Operator": "operator"}
+
+# ── DB location (adjust if your db.py uses a different path)
+DB_PATH = "C:/Users/paula/Documents/MyWork/ter_db2.sqlite"
+
+# ── Password hashing helpers
+try:
+    
+    def hash_password(pw: str) -> str:
+        return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    def verify_password(pw: str, hashed: str) -> bool:
+        try:
+            return bcrypt.checkpw(pw.encode("utf-8"), hashed.encode("utf-8"))
+        except Exception:
+            return False
+except Exception:
+    # Fallback: PBKDF2-HMAC (salted). Format: pbkdf2$<salt b64>$<hash b64>
+    def _pbkdf2(pw: str, salt: bytes) -> bytes:
+        return hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, 200_000, dklen=32)
+    def hash_password(pw: str) -> str:
+        salt = os.urandom(16)
+        dk = _pbkdf2(pw, salt)
+        return "pbkdf2$" + base64.b64encode(salt).decode() + "$" + base64.b64encode(dk).decode()
+    def verify_password(pw: str, hashed: str) -> bool:
+        try:
+            algo, b64salt, b64hash = hashed.split("$", 2)
+            if algo != "pbkdf2":
+                return False
+            salt = base64.b64decode(b64salt)
+            expect = base64.b64decode(b64hash)
+            cand = _pbkdf2(pw, salt)
+            return hmac.compare_digest(cand, expect)
+        except Exception:
+            return False
 
 ctk.set_appearance_mode("light")
 
 
+def db_connect():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 class LoginApp(ctk.CTk):
+    
     def __init__(self, logo_path: str | None = "logo.png"):
         super().__init__()
 
         self._resize_job = None
         self._width_bucket = None
-        self.users: dict[str, dict] = {}
+        self.departments = []          # list[(id, name)]
+        self.dept_name_to_id = {}      # name -> id
 
         # Window
         self.title("Camarines Norte State College")
-        self.geometry("960x640")
+        self.geometry("960x840")
         self.minsize(760, 540)
         self.configure(fg_color=PRIMARY)
 
@@ -90,6 +134,9 @@ class LoginApp(ctk.CTk):
         self.card.grid(row=1, column=0, sticky="n", pady=(12, 24))
         self.card.grid_columnconfigure(0, weight=1)
 
+        # Load departments from DB before building forms
+        self._load_departments()
+
         # Build pages
         self._build_login_page()
         self._build_register_page()
@@ -104,6 +151,19 @@ class LoginApp(ctk.CTk):
         self.bind("<Configure>", self._on_resize)
         self._apply_responsive()
 
+    # ---------- DB utils ----------
+    def _load_departments(self):
+        """Populate self.departments and self.dept_name_to_id from DB."""
+        try:
+            with db_connect() as conn:
+                rows = conn.execute("SELECT id, name FROM departments ORDER BY name;").fetchall()
+                self.departments = [(r["id"], r["name"]) for r in rows]
+                self.dept_name_to_id = {name: did for did, name in self.departments}
+        except sqlite3.Error as e:
+            self.departments = []
+            self.dept_name_to_id = {}
+            messagebox.showerror("Database Error", f"Failed to load departments:\n{e}")
+
     # ---------- Login Page ----------
     def _build_login_page(self):
         self.login_page = ctk.CTkFrame(self.card, fg_color="transparent")
@@ -112,12 +172,12 @@ class LoginApp(ctk.CTk):
         ctk.CTkLabel(self.login_page, text="Sign in to your account",
                      font=self.font_label, text_color=TEXT).grid(row=0, column=0, pady=(18, 8))
 
-        ctk.CTkLabel(self.login_page, text="Email", font=self.font_label, text_color=TEXT)\
+        ctk.CTkLabel(self.login_page, text="Username", font=self.font_label, text_color=TEXT)\
             .grid(row=1, column=0, sticky="w", padx=22)
-        self.login_email = ctk.CTkEntry(self.login_page, height=40, corner_radius=10,
-                                        placeholder_text="Enter your email",
-                                        fg_color="white", text_color=TEXT, border_color=BORDER)
-        self.login_email.grid(row=2, column=0, sticky="ew", padx=22, pady=(4, 10))
+        self.login_username = ctk.CTkEntry(self.login_page, height=40, corner_radius=10,
+                                           placeholder_text="Enter your username",
+                                           fg_color="white", text_color=TEXT, border_color=BORDER)
+        self.login_username.grid(row=2, column=0, sticky="ew", padx=22, pady=(4, 10))
 
         ctk.CTkLabel(self.login_page, text="Password", font=self.font_label, text_color=TEXT)\
             .grid(row=3, column=0, sticky="w", padx=22)
@@ -164,7 +224,7 @@ class LoginApp(ctk.CTk):
                       ).grid(row=0, column=1, sticky="e", padx=4)
 
         # Enter to submit
-        self.login_email.bind("<Return>", lambda e: self._handle_login())
+        self.login_username.bind("<Return>", lambda e: self._handle_login())
         self.login_password.bind("<Return>", lambda e: self._handle_login())
 
     # ---------- Register Page ----------
@@ -175,27 +235,19 @@ class LoginApp(ctk.CTk):
         ctk.CTkLabel(self.register_page, text="Create your account",
                      font=self.font_label, text_color=TEXT).grid(row=0, column=0, pady=(18, 8))
 
-        # Full Name
-        ctk.CTkLabel(self.register_page, text="Full Name", font=self.font_label, text_color=TEXT)\
+        # Username
+        ctk.CTkLabel(self.register_page, text="Username", font=self.font_label, text_color=TEXT)\
             .grid(row=1, column=0, sticky="w", padx=22)
-        self.reg_name = ctk.CTkEntry(self.register_page, height=40, corner_radius=10,
-                                     placeholder_text="e.g., Juan Dela Cruz",
-                                     fg_color="white", text_color=TEXT, border_color=BORDER)
-        self.reg_name.grid(row=2, column=0, sticky="ew", padx=22, pady=(4, 10))
+        self.reg_username = ctk.CTkEntry(self.register_page, height=40, corner_radius=10,
+                                         placeholder_text="e.g., your_username",
+                                         fg_color="white", text_color=TEXT, border_color=BORDER)
+        self.reg_username.grid(row=2, column=0, sticky="ew", padx=22, pady=(4, 10))
 
-        # Email
-        ctk.CTkLabel(self.register_page, text="Email", font=self.font_label, text_color=TEXT)\
-            .grid(row=3, column=0, sticky="w", padx=22)
-        self.reg_email = ctk.CTkEntry(self.register_page, height=40, corner_radius=10,
-                                      placeholder_text="e.g., name@example.com",
-                                      fg_color="white", text_color=TEXT, border_color=BORDER)
-        self.reg_email.grid(row=4, column=0, sticky="ew", padx=22, pady=(4, 10))
-
-        # Password row + toggle
+        # Password + confirm
         ctk.CTkLabel(self.register_page, text="Password", font=self.font_label, text_color=TEXT)\
-            .grid(row=5, column=0, sticky="w", padx=22)
+            .grid(row=3, column=0, sticky="w", padx=22)
         pw_row = ctk.CTkFrame(self.register_page, fg_color="transparent")
-        pw_row.grid(row=6, column=0, sticky="ew", padx=22, pady=(4, 6))
+        pw_row.grid(row=4, column=0, sticky="ew", padx=22, pady=(4, 6))
         pw_row.grid_columnconfigure(0, weight=1)
 
         self.reg_password = ctk.CTkEntry(pw_row, height=40, corner_radius=10,
@@ -210,30 +262,41 @@ class LoginApp(ctk.CTk):
                                            command=lambda: self._toggle_pw(self.reg_password, "reg"))
         self.reg_toggle_pw.grid(row=0, column=1)
 
-        # Confirm password
         ctk.CTkLabel(self.register_page, text="Confirm Password", font=self.font_label, text_color=TEXT)\
-            .grid(row=7, column=0, sticky="w", padx=22)
+            .grid(row=5, column=0, sticky="w", padx=22)
         self.reg_confirm = ctk.CTkEntry(self.register_page, height=40, corner_radius=10,
                                         placeholder_text="Re-type your password",
                                         fg_color="white", text_color=TEXT, border_color=BORDER, show="•")
-        self.reg_confirm.grid(row=8, column=0, sticky="ew", padx=22, pady=(4, 10))
+        self.reg_confirm.grid(row=6, column=0, sticky="ew", padx=22, pady=(4, 10))
 
-        # Role (✅ non-transparent dropdown + themed)
+        # Department (dropdown from DB)
+        ctk.CTkLabel(self.register_page, text="Department", font=self.font_label, text_color=TEXT)\
+            .grid(row=7, column=0, sticky="w", padx=22)
+        dept_names = [name for _, name in self.departments] or ["(No departments found)"]
+        self.reg_department = ctk.CTkOptionMenu(
+            self.register_page, values=dept_names, height=40, corner_radius=10,
+            fg_color="white", text_color=TEXT, button_color=PRIMARY,
+            button_hover_color=PRIMARY_HOVER, font=self.font_label,
+            dropdown_fg_color="white", dropdown_hover_color="#F3F4F6",
+            dropdown_text_color=TEXT
+        )
+        if dept_names:
+            self.reg_department.set(dept_names[0])
+        self.reg_department.grid(row=8, column=0, sticky="ew", padx=22, pady=(4, 10))
+
+        # Role (Admin/Dean/Operator)
         ctk.CTkLabel(self.register_page, text="Role", font=self.font_label, text_color=TEXT)\
             .grid(row=9, column=0, sticky="w", padx=22)
         self.reg_role = ctk.CTkOptionMenu(
-            self.register_page, values=ROLES, height=40, corner_radius=10,
-            fg_color="white",               # button background (not transparent)
-            text_color=TEXT,
-            button_color=PRIMARY,           # button color
-            button_hover_color=PRIMARY_HOVER,
-            font=self.font_label,
-            dropdown_fg_color="white",      # dropdown panel background (solid)
-            dropdown_hover_color="#F3F4F6", # hover color for items
-            dropdown_text_color=TEXT        # text color in dropdown items
+            self.register_page, values=ROLES_UI, height=40, corner_radius=10,
+            fg_color="white", text_color=TEXT, button_color=PRIMARY,
+            button_hover_color=PRIMARY_HOVER, font=self.font_label,
+            dropdown_fg_color="white", dropdown_hover_color="#F3F4F6",
+            dropdown_text_color=TEXT, command=self._on_role_change
         )
         self.reg_role.grid(row=10, column=0, sticky="ew", padx=22, pady=(4, 10))
-        self.reg_role.set(ROLES[0])
+        self.reg_role.set(ROLES_UI[0])  # default "Admin" to demonstrate dept disabling
+        self._on_role_change(ROLES_UI[0])
 
         self.reg_error = ctk.CTkLabel(self.register_page, text="", font=self.font_small, text_color="#B91C1C")
         self.reg_error.grid(row=11, column=0, sticky="w", padx=22, pady=(2, 2))
@@ -255,8 +318,16 @@ class LoginApp(ctk.CTk):
                       command=self._show_login).grid(row=0, column=1, sticky="ew", padx=(6, 0))
 
         # Enter to submit
-        for w in (self.reg_name, self.reg_email, self.reg_password, self.reg_confirm):
+        for w in (self.reg_username, self.reg_password, self.reg_confirm):
             w.bind("<Return>", lambda e: self._handle_register())
+
+    # Enable/disable department depending on role
+    def _on_role_change(self, choice: str):
+        role = ROLE_MAP.get(choice, "operator")
+        if role == "admin":
+            self.reg_department.configure(state="disabled")
+        else:
+            self.reg_department.configure(state="normal")
 
     # ---------- Page switches ----------
     def _show_login(self):
@@ -271,19 +342,16 @@ class LoginApp(ctk.CTk):
 
     # ---------- Handlers ----------
     def _handle_register(self):
-        name = self.reg_name.get().strip()
-        email = self.reg_email.get().strip()
+        username = self.reg_username.get().strip()
         pw = self.reg_password.get()
         pw2 = self.reg_confirm.get()
-        role = self.reg_role.get()
+        role_ui = self.reg_role.get()
+        role = ROLE_MAP.get(role_ui, "operator")
 
         self.reg_error.configure(text="")
 
-        if not all([name, email, pw, pw2, role]):
+        if not username or not pw or not pw2 or not role:
             self.reg_error.configure(text="Please fill in all fields.")
-            return
-        if not EMAIL_RE.match(email):
-            self.reg_error.configure(text="Invalid email format.")
             return
         if len(pw) < 8:
             self.reg_error.configure(text="Password must be at least 8 characters.")
@@ -291,86 +359,86 @@ class LoginApp(ctk.CTk):
         if pw != pw2:
             self.reg_error.configure(text="Passwords do not match.")
             return
-        if email in self.users:
-            self.reg_error.configure(text="Email is already registered.")
+
+        # Department handling
+        department_id = None
+        if role != "admin":
+            if not self.departments:
+                self.reg_error.configure(text="No departments available. Contact admin.")
+                return
+            dept_name = self.reg_department.get()
+            department_id = self.dept_name_to_id.get(dept_name)
+            if department_id is None:
+                self.reg_error.configure(text="Please select a department.")
+                return
+
+        # Insert into DB
+        try:
+            with db_connect() as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT INTO users (username, password_hash, role, department_id, is_active, created_at) "
+                    "VALUES (?, ?, ?, ?, 1, datetime('now'))",
+                    (username, hash_password(pw), role, department_id)
+                )
+                conn.commit()
+        except sqlite3.IntegrityError as e:
+            # likely UNIQUE(username) violation
+            self.reg_error.configure(text="Username is already taken.")
+            return
+        except sqlite3.Error as e:
+            self.reg_error.configure(text=f"Database error: {e}")
             return
 
-        # Save to in-memory store
-        self.users[email] = {"name": name, "password": pw, "role": role}
-
-        messagebox.showinfo("Registered", f"Account created as {role}. You can now login.")
-        self._show_login()
+        messagebox.showinfo("Registered", f"Account created as {role_ui}. You can now log in.")
         # Prefill login
-        self.login_email.delete(0, "end")
-        self.login_email.insert(0, email)
+        self._show_login()
+        self.login_username.delete(0, "end")
+        self.login_username.insert(0, username)
         self.login_password.delete(0, "end")
         self.login_password.insert(0, pw)
 
     def _handle_login(self):
-        email = self.login_email.get().strip()
+        username = self.login_username.get().strip()
         pw = self.login_password.get()
 
         self.login_error.configure(text="")
 
-        if not email or not pw:
-            self.login_error.configure(text="Please enter both email and password.")
-            return
-        if not EMAIL_RE.match(email):
-            self.login_error.configure(text="Invalid email format.")
-            return
-        if email not in self.users or self.users[email]["password"] != pw:
-            self.login_error.configure(text="Invalid email or password.")
+        if not username or not pw:
+            self.login_error.configure(text="Please enter both username and password.")
             return
 
-        role = self.users[email]["role"]
-        self._redirect_to_role(role, self.users[email]["name"], email)
+        try:
+            with db_connect() as conn:
+                user = conn.execute(
+                    "SELECT id, username, password_hash, role, is_active FROM users WHERE username=?",
+                    (username,)
+                ).fetchone()
+                if not user:
+                    self.login_error.configure(text="Invalid username or password.")
+                    return
+                if not user["is_active"]:
+                    self.login_error.configure(text="Account disabled. Contact admin.")
+                    return
+                if not verify_password(pw, user["password_hash"]):
+                    self.login_error.configure(text="Invalid username or password.")
+                    return
 
-    # ---------- Role redirect (no DB) ----------
-    def _redirect_to_role(self, role: str, name: str, email: str):
-        self.withdraw()
-        dash = ctk.CTkToplevel(self)
-        dash.title(f"{role} Dashboard – CNSC ATS")
-        dash.geometry("900x560")
-        dash.minsize(720, 480)
+                # Update last_login_at
+                conn.execute("UPDATE users SET last_login_at = datetime('now') WHERE id=?", (user["id"],))
+                conn.commit()
+        except sqlite3.Error as e:
+            self.login_error.configure(text=f"Database error: {e}")
+            return
 
-        dash.grid_rowconfigure(0, weight=0)
-        dash.grid_rowconfigure(1, weight=1)
-        dash.grid_columnconfigure(0, weight=1)
+        role = user["role"]
+        self._redirect_to_role(role, username)
 
-        header = ctk.CTkFrame(dash, fg_color=BG)
-        header.grid(row=0, column=0, sticky="ew")
-        header.grid_columnconfigure(0, weight=1)
-
-        title = ctk.CTkLabel(header, text=f"Welcome, {name} ({role})",
-                             font=ctk.CTkFont("Poppins", 20, "bold"),
-                             text_color=PRIMARY)
-        title.grid(row=0, column=0, sticky="w", padx=16, pady=(12, 6))
-
-        subtitle = ctk.CTkLabel(header, text=f"Email: {email}",
-                                font=ctk.CTkFont("Poppins", 12),
-                                text_color=TEXT_MUTED)
-        subtitle.grid(row=1, column=0, sticky="w", padx=16, pady=(0, 12))
-
-        body = ctk.CTkFrame(dash, fg_color="white", corner_radius=12, border_width=1, border_color=BORDER)
-        body.grid(row=1, column=0, sticky="nsew", padx=16, pady=16)
-        body.grid_rowconfigure(0, weight=1)
-        body.grid_columnconfigure(0, weight=1)
-
-        ctk.CTkLabel(body,
-                     text=f"This is a placeholder {role} dashboard.\nHook your {role}-specific UI here.",
-                     font=self.font_label, text_color=TEXT, justify="center").grid(row=0, column=0)
-
-        def _logout():
-            dash.destroy()
-            self.deiconify()
-
-        btn_row = ctk.CTkFrame(header, fg_color="transparent")
-        btn_row.grid(row=0, column=1, rowspan=2, sticky="e", padx=12)
-        ctk.CTkButton(btn_row, text="Logout", fg_color=PRIMARY, hover_color=PRIMARY_HOVER,
-                      text_color="white", corner_radius=10,
-                      command=_logout).grid(row=0, column=0, padx=4, pady=8)
-
-        dash.protocol("WM_DELETE_WINDOW", _logout)
+    # ---------- Role redirect (placeholder) ----------
+    def _redirect_to_role(self, role: str, username: str):
+        self.destroy()
+        
+        main.create_app(role=role, username=username)
 
     # ---------- Shared helpers ----------
     def _toggle_pw(self, entry: ctk.CTkEntry, kind: str):
@@ -408,8 +476,8 @@ class LoginApp(ctk.CTk):
         else:
             bucket = "lg"; bucket_card_w = 600; bucket_entry_w = 520; logo = 110
 
-        # Clamp widths to available space (👍 works great when not fullscreen)
-        max_card_w = max(360, min(bucket_card_w, w - 160))     # keep ~80px margin on each side
+        # Clamp widths to available space
+        max_card_w = max(360, min(bucket_card_w, w - 160))
         entry_w = max(300, min(bucket_entry_w, max_card_w - 80))
 
         if bucket == self._width_bucket and getattr(self, "_last_card_w", None) == max_card_w:
@@ -421,13 +489,13 @@ class LoginApp(ctk.CTk):
 
         # Active page fields
         if self.login_page.winfo_ismapped():
-            self.login_email.configure(width=entry_w)
+            self.login_username.configure(width=entry_w)
             self.login_password.configure(width=entry_w - 80)  # leave room for toggle
             self.btn_login.configure(width=entry_w)
 
         if self.register_page.winfo_ismapped():
-            for wdg in (self.reg_name, self.reg_email, self.reg_password, self.reg_confirm,
-                        self.btn_register, self.reg_role):
+            for wdg in (self.reg_username, self.reg_password, self.reg_confirm,
+                        self.btn_register, self.reg_role, self.reg_department):
                 wdg.configure(width=entry_w)
 
         if self.logo_image:
