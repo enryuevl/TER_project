@@ -66,7 +66,7 @@ def create_app(role: str, username: str, department_id: int | None):
         "Scan": "scan.png",
         "Admin": "admin.png",
         "Results": "results.png",
-        "Database": "accounts.png",
+        "Data Management": "accounts.png",
         "Logout": "logout.png"
     }
 
@@ -169,17 +169,17 @@ def create_app(role: str, username: str, department_id: int | None):
         "Scan": lambda: ScanPage(main_frame, processed_results),
         "Admin": lambda: DeanEvaluationForm(main_frame, processed_results),
         "Results": lambda: ResultsPage(main_frame, processed_results),
-        "Database": lambda: AccountsDatabasePage(main_frame, ctx),
+        "Data Management": lambda: AccountsDatabasePage(main_frame, ctx),
     }
 
     # Role-based visibility
     role = (role or "").lower()
     if role == "admin":
-        allowed = {"Dashboard", "Scan", "Admin", "Results", "Database"}
+        allowed = {"Dashboard", "Scan", "Admin", "Results", "Data Management"}
     elif role == "dean":
-        allowed = {"Dashboard", "Scan", "Admin", "Results", "Database"}  # hide Database
+        allowed = {"Dashboard", "Scan", "Admin", "Results", "Data Management"}  # hide Database
     else:  # operator or unknown
-        allowed = {"Dashboard", "Scan", "Results", "Database"}  # hide Admin + Database
+        allowed = {"Dashboard", "Scan", "Results", "Data Management"}  # hide Admin + Database
 
     for name, action in nav_actions.items():
         if name in allowed:

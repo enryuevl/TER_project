@@ -17,6 +17,8 @@ class AccountsDatabasePage:
         self.ctx = ctx
 
         self._build_ui()
+        
+        
 
     # --- Role/Dept helpers ---
     def _is_operator(self) -> bool:
@@ -34,9 +36,18 @@ class AccountsDatabasePage:
 
         self.container = CTkFrame(self.master, fg_color="transparent")
         self.container.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # --- Page Title Bar ---
+        title_bar = CTkFrame(self.container, fg_color="#BF3131", height=70, corner_radius=10)
+        title_bar.pack(fill="x", padx=10, pady=(0, 12))
 
-        CTkLabel(self.container, text="Faculty, Departments & Blocks Manager",
-                 font=("Arial", 24, "bold"), text_color="#691612").pack(pady=(0, 20))
+        CTkLabel(
+            title_bar,
+            text="Data Management Panel",
+            font=("Poppins", 18, "bold"),
+            text_color="#FFFFFF"
+        ).pack(side="left", padx=20, pady=12)
+
 
         # Tabs
         self.tab_frame = CTkFrame(self.container, fg_color="transparent")
@@ -60,6 +71,7 @@ class AccountsDatabasePage:
             )
             btn.pack(side="left", padx=5)
             self.tab_buttons[entity] = btn
+            
 
         self.show_tab("Faculty")
 
@@ -69,16 +81,18 @@ class AccountsDatabasePage:
         # highlight selected tab with red palette alignment
         for tab, btn in self.tab_buttons.items():
             if tab == name:
+                # ACTIVE
                 btn.configure(
-                    fg_color="#691612",    # Dark Crimson active
-                    text_color="#FFFFFF",  # White text active
-                    hover_color="#BF3131"  # Crimson hover active
+                    fg_color="#691612",    # Dark Crimson
+                    text_color="#FFFFFF",
+                    hover_color="#BF3131", # Crimson hover
                 )
             else:
+                # INACTIVE (neutral)
                 btn.configure(
-                    fg_color="#AC5353",    # Muted Red inactive
-                    text_color="#333333",  # Dark text inactive
-                    hover_color="#8B1D18"  # Dark Red hover inactive
+                    fg_color="#BF3131",
+                    text_color="#FFFFFF",
+                    hover_color="#691612",
                 )
 
         for w in self.content_frame.winfo_children():
@@ -665,6 +679,16 @@ class AccountsDatabasePage:
         messagebox.showinfo("Export Successful", f"{table_name} exported to {file_path}")
 
     # ---------------- Forms ---------------- #
+    def _apply_dropdown_theme(self, menu: CTkOptionMenu):
+        menu.configure(
+        fg_color="#BF3131",           # Main button face (Crimson)
+        button_color="#691612",       # Left arrow background
+        button_hover_color="#8B1D18", # Dark red hover
+        text_color="#FFFFFF",         # White text on button
+        dropdown_fg_color="#FFFFFF",  # Light beige dropdown background
+        dropdown_text_color="#1F2937",# Dark gray dropdown text
+        dropdown_hover_color="#BF3131" 
+    )
     def build_faculty_form(self, parent, mode):
         CTkLabel(parent, text="Faculty Form", font=("Arial", 18, "bold"),
                 text_color="#691612").pack(pady=10)
@@ -681,19 +705,12 @@ class AccountsDatabasePage:
             rows = conn.execute("SELECT name FROM departments").fetchall()
             dept_options = [r[0] for r in rows]
         if dept_options:
-            dept_menu = CTkOptionMenu(
-                parent,
-                variable=dept_var,
-                values=dept_options,
-                fg_color="#BF3131",
-                button_color="#691612",
-                button_hover_color="#8B1D18",
-                text_color="#FFFFFF"
-            )
+            dept_menu = CTkOptionMenu(parent, variable=dept_var, values=dept_options)
+            self._apply_dropdown_theme(dept_menu)
             dept_menu.pack(fill="x", padx=20, pady=10)
             dept_var.set(dept_options[0])
 
-        # 🆕 ---- Rank & Sub-rank Dropdowns ----
+        #  ---- Rank & Sub-rank Dropdowns ----
         RANKS = {
             "Instructor": ["I", "II", "III"],
             "Assistant Professor": ["I", "II", "III", "IV"],
@@ -724,11 +741,13 @@ class AccountsDatabasePage:
 
         CTkLabel(parent, text="Rank").pack(fill="x", padx=20, pady=(5, 0))
         rank_menu = CTkOptionMenu(parent, variable=rank_var, values=list(RANKS.keys()))
+        self._apply_dropdown_theme(rank_menu) 
         rank_menu.pack(fill="x", padx=20, pady=2)
         rank_var.trace_add("write", update_subranks)
 
         CTkLabel(parent, text="Sub-rank").pack(fill="x", padx=20, pady=(5, 0))
         sub_menu = CTkOptionMenu(parent, variable=subrank_var, values=RANKS[rank_var.get()])
+        self._apply_dropdown_theme(sub_menu) 
         sub_menu.pack(fill="x", padx=20, pady=2)
 
         # --- Pre-fill for edit ---
@@ -826,6 +845,7 @@ class AccountsDatabasePage:
                 font=("Arial", 12)).pack(fill="x", padx=20, pady=(4, 0))
         dean_var = StringVar()
         dean_menu = CTkOptionMenu(parent, variable=dean_var, values=["(None for now)"])
+        self._apply_dropdown_theme(dean_menu) 
         dean_menu.pack(fill="x", padx=20, pady=6)
         dean_var.set("(None for now)")
 
@@ -960,16 +980,21 @@ class AccountsDatabasePage:
             CTkLabel(parent, text="Create a Program first.", text_color="#B22222").pack(pady=10)
             return
         prog_menu = CTkOptionMenu(parent, variable=prog_var, values=prog_options)
+        self._apply_dropdown_theme(prog_menu) 
         prog_menu.pack(fill="x", padx=20, pady=5)
         prog_var.set(prog_options[0])
 
         # Year Level
         year_var = StringVar(value="1")
-        CTkOptionMenu(parent, variable=year_var, values=["1", "2", "3", "4"]).pack(fill="x", padx=20, pady=5)
+        year_menu = CTkOptionMenu(parent, variable=year_var, values=["1", "2", "3", "4"])
+        self._apply_dropdown_theme(year_menu)     
+        year_menu.pack(fill="x", padx=20, pady=5)
 
         # Section
         section_var = StringVar(value="A")
-        CTkOptionMenu(parent, variable=section_var, values=["A", "B", "C", "D"]).pack(fill="x", padx=20, pady=5)
+        section_menu = CTkOptionMenu(parent, variable=section_var, values=["A", "B", "C", "D"])
+        self._apply_dropdown_theme(section_menu)    # ✅ apply crimson theme
+        section_menu.pack(fill="x", padx=20, pady=5)
 
         # Academic Year
         sy_entry = CTkEntry(parent, placeholder_text="Academic Year (e.g. 2025-2026)")
@@ -983,7 +1008,7 @@ class AccountsDatabasePage:
         current_sem = "1st" if 8 <= month <= 12 else ("2nd" if 1 <= month <= 6 else "Summer")
         sem_var.set(current_sem)
 
-        # 🔁 Auto-compute AY from semester & current year
+        #  Auto-compute AY from semester & current year
         y = now.year
         if current_sem == "1st":
             ay = f"{y}-{y+1}"
@@ -1077,7 +1102,9 @@ class AccountsDatabasePage:
         with db.connect() as conn:
             for fid, fname in conn.execute("SELECT id, full_name FROM faculty ORDER BY full_name"):
                 faculty_options.append(fname); faculty_map[fname] = fid
-        CTkOptionMenu(parent, variable=faculty_var, values=faculty_options).pack(fill="x", padx=20, pady=5)
+        faculty_menu = CTkOptionMenu(parent, variable=faculty_var, values=faculty_options)
+        self._apply_dropdown_theme(faculty_menu)    
+        faculty_menu.pack(fill="x", padx=20, pady=5)
         faculty_var.set("TBA")
 
         # ---- Subject dropdown (starts disabled/empty) ----
@@ -1085,6 +1112,7 @@ class AccountsDatabasePage:
         subject_options = []        # will be populated after block selection
         subject_map = {}            # label -> id, rebuilt each time
         subject_menu = CTkOptionMenu(parent, variable=subject_var, values=["— Select a block first —"])
+        self._apply_dropdown_theme(subject_menu) 
         subject_menu.pack(fill="x", padx=20, pady=5)
         subject_menu.configure(state="disabled")
 
@@ -1103,6 +1131,7 @@ class AccountsDatabasePage:
                 block_map[label] = bid
 
         block_menu = CTkOptionMenu(parent, variable=block_var, values=["Merged"] + block_options)
+        self._apply_dropdown_theme(block_menu) 
         block_menu.pack(fill="x", padx=20, pady=5)
         block_var.set("Select Block")
 
@@ -1335,7 +1364,9 @@ class AccountsDatabasePage:
         if not dept_opts:
             CTkLabel(parent, text="Create a Department first.", text_color="#B22222").pack(pady=10)
             return
-        CTkOptionMenu(parent, variable=dept_var, values=dept_opts).pack(fill="x", padx=20, pady=5)
+        dept_menu = CTkOptionMenu(parent, variable=dept_var, values=dept_opts)
+        self._apply_dropdown_theme(dept_menu)
+        dept_menu.pack(fill="x", padx=20, pady=5)
         dept_var.set(dept_opts[0])
 
         record_id = None
@@ -1385,10 +1416,14 @@ class AccountsDatabasePage:
         units_e.pack(fill="x", padx=20, pady=5)
 
         year_var = StringVar(value="1")
-        CTkOptionMenu(parent, variable=year_var, values=["1","2","3","4"]).pack(fill="x", padx=20, pady=5)
+        year_menu = CTkOptionMenu(parent, variable=year_var, values=["1", "2", "3", "4"])
+        self._apply_dropdown_theme(year_menu)
+        year_menu.pack(fill="x", padx=20, pady=5)
 
         sem_var = StringVar(value="1st")
-        CTkOptionMenu(parent, variable=sem_var, values=["1st","2nd","Summer"]).pack(fill="x", padx=20, pady=5)
+        sem_menu = CTkOptionMenu(parent, variable=sem_var, values=["1st", "2nd", "Summer"])
+        self._apply_dropdown_theme(sem_menu)
+        sem_menu.pack(fill="x", padx=20, pady=5)
 
         # Program dropdown (required)
         prog_var, prog_opts, prog_map = StringVar(), [], {}
@@ -1398,7 +1433,9 @@ class AccountsDatabasePage:
         if not prog_opts:
             CTkLabel(parent, text="Create a Program first.", text_color="#B22222").pack(pady=10)
             return
-        CTkOptionMenu(parent, variable=prog_var, values=prog_opts).pack(fill="x", padx=20, pady=5)
+        prog_menu = CTkOptionMenu(parent, variable=prog_var, values=prog_opts)
+        self._apply_dropdown_theme(prog_menu)
+        prog_menu.pack(fill="x", padx=20, pady=5)
         prog_var.set(prog_opts[0])
 
         # Optional department shortcut
@@ -1406,7 +1443,9 @@ class AccountsDatabasePage:
         with db.connect() as conn:
             for did, dname in conn.execute("SELECT id, name FROM departments ORDER BY name"):
                 dept_opts.append(dname); dept_map[dname] = did
-        CTkOptionMenu(parent, variable=dept_var, values=dept_opts).pack(fill="x", padx=20, pady=5)
+        dept_menu = CTkOptionMenu(parent, variable=dept_var, values=dept_opts)
+        self._apply_dropdown_theme(dept_menu)
+        dept_menu.pack(fill="x", padx=20, pady=5) 
         dept_var.set("(none)")
 
         record_id = None
