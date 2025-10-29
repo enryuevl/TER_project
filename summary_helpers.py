@@ -14,6 +14,12 @@ try:
 except Exception:
     load_workbook = None
 
+try:
+    from tkinter import messagebox
+except Exception:
+    messagebox = None
+
+
 
 def _safe_filename(name: str) -> str:
     name = re.sub(r'[\\\\/:*?"<>|]+', "", name)
@@ -373,11 +379,33 @@ class SummaryFormController:
         self.entry_widgets["rater_comments"] = ctk.CTkTextbox(comments, height=50, width=900, font=("Poppins", 12))
         self.entry_widgets["rater_comments"].pack(pady=5)
 
-        # Save/Close Row (wire export here if caller wants to use it)
+        # Save/Close Row (now includes Export)
         btn_row = ctk.CTkFrame(scroll, fg_color="transparent")
         btn_row.pack(fill="x", pady=12)
-        ctk.CTkButton(btn_row, text="Close", fg_color="#9CA3AF", hover_color="#6B7280",
-                      text_color="#FFFFFF", command=win.destroy).pack(side="right")
+
+        def _do_export():
+            try:
+                # ensure the latest totals are reflected
+                self._update_overall_point_score()
+                save_path = self.export_full_summary("template.xlsx")
+                if messagebox and save_path:
+                    messagebox.showinfo("Saved", f"✅ Summary exported:\n{save_path}")
+            except Exception as e:
+                if messagebox:
+                    messagebox.showerror("Export Error", str(e))
+
+        ctk.CTkButton(
+            btn_row, text="Export Summary",
+            fg_color="#691612", hover_color="#8B1D18",
+            text_color="#FFFFFF", font=("Poppins", 14, "bold"),
+            corner_radius=8, command=_do_export
+        ).pack(side="right", padx=8)
+
+        ctk.CTkButton(
+            btn_row, text="Close",
+            fg_color="#9CA3AF", hover_color="#6B7280",
+            text_color="#FFFFFF", command=win.destroy
+        ).pack(side="right")
 
     # ---------- helpers ----------
     def _set_value(self, key, value, field=None):
