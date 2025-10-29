@@ -1316,7 +1316,7 @@ class AccountsDatabasePage:
 
         CTkButton(parent, text="Save", fg_color="#691612", command=submit).pack(pady=20)
 
-    
+
     def build_program_form(self, parent, mode):
         CTkLabel(parent, text="Program Form", font=("Arial", 18, "bold"),
                 text_color="#691612").pack(pady=10)
@@ -1372,8 +1372,6 @@ class AccountsDatabasePage:
                 messagebox.showerror("DB Error", str(e))
 
         CTkButton(parent, text="Save", fg_color="#691612", command=submit).pack(pady=20)
-
-
 
     def build_subject_form(self, parent, mode):
         CTkLabel(parent, text="Subject Form", font=("Arial", 18, "bold"),
