@@ -77,7 +77,6 @@ def create_app(role: str, username: str, department_id: int | None):
         except Exception:
             return None
 
-    # Logout
     def confirm_logout():
         if messagebox.askyesno("Logout", "Are you sure you want to logout?"):
             app.destroy()
