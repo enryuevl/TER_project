@@ -61,6 +61,10 @@ class RatingChips(CTkFrame):
                     text_color=self.INACTIVE_TEXT
                 )
 
+# --- Custom exception for dean overwrites ---
+class OverwriteDeanEvaluationError(Exception):
+    pass
+
 
 # --- Main Panel ---
 class DeanEvaluationForm:
@@ -143,10 +147,8 @@ class DeanEvaluationForm:
         btns_primary.pack(fill="x", padx=16, pady=(0, 8))
         CTkButton(btns_primary, text="Save Evaluation", fg_color="#691612",
                   hover_color="#8B1D18", text_color="#FFFFFF",
-                  command=self.save_dean_rating).pack(fill="x", pady=4)
-        CTkButton(btns_primary, text="Save & Open Summary", fg_color="#BF3131",
-                  hover_color="#8B1D18", text_color="#FFFFFF",
-                  command=self._open_summary_for_current).pack(fill="x", pady=4)
+                  command=self._save_then_summary).pack(fill="x", pady=4)
+    
 
         CTkLabel(left, text="Utilities", font=("Roboto", 14, "bold"),
                  text_color="#691612").pack(anchor="w", padx=16, pady=(8, 6))
@@ -200,6 +202,18 @@ class DeanEvaluationForm:
         ay = f"{y}-{y+1}" if sem == "1st" else f"{y-1}-{y}"
         return f"{ay} • {sem}"
 
+    def _infer_ay_and_sem_from_today(self):
+        import datetime as _dt
+        now = _dt.datetime.now()
+        y, m = now.year, now.month
+        if 8 <= m <= 12:
+            return f"{y}-{y+1}", "1st"
+        elif 1 <= m <= 6:
+            return f"{y-1}-{y}", "2nd"
+        else:
+            return f"{y-1}-{y}", "Summer"
+
+    
     # ---------- grid builder ----------
     def _build_evaluation_grid(self, parent):
         legend = CTkFrame(parent, fg_color="#FFFFFF")
@@ -321,17 +335,27 @@ class DeanEvaluationForm:
                     sectioned_results[section][int(idx)] = 0
 
         self.processed_results.setdefault(teacher, {})
-        if "Dean" in self.processed_results[teacher] and self.processed_results[teacher]["Dean"]:
-            overwrite = messagebox.askyesno("Overwrite Dean Rating",
-                f"A Dean evaluation already exists for {teacher}.\nDo you want to overwrite it?")
-            if not overwrite: return
+        overwrote = bool(self.processed_results[teacher].get("Dean"))
 
+        # Always keep a single Dean entry
         self.processed_results[teacher]["Dean"] = [("dean_input", sectioned_results)]
         self._save_results()
+        # write/update the Excel summary using the shared path
+        try:
+            self._export_summary_excel(teacher)
+        except Exception as _ex:
+            print(f"⚠️ Dean export failed: {_ex}")
 
-        messagebox.showinfo("Saved", f"Dean evaluation for {teacher} saved successfully.")
-        if hasattr(self, "status_label"):
-            self.status_label.configure(text="Saved")
+
+        if not overwrote:
+            messagebox.showinfo("Saved", f"Dean evaluation for {teacher} saved successfully.")
+            if hasattr(self, "status_label"):
+                self.status_label.configure(text="Saved")
+            return
+
+        # Raise when overwriting an existing one
+        raise OverwriteDeanEvaluationError(f"Overwriting existing Dean evaluation for: {teacher}")
+
 
     def _save_results(self):
         try:
@@ -369,3 +393,61 @@ class DeanEvaluationForm:
             except Exception: pass
         if hasattr(self, "status_label"):
             self.status_label.configure(text="Cleared")
+
+    def _save_then_summary(self):
+        try:
+            self.save_dean_rating()
+        except OverwriteDeanEvaluationError as e:
+            messagebox.showerror("Dean Overwrite", str(e))
+        finally:
+            self._open_summary_for_current()
+
+    def _export_summary_excel(self, teacher: str):
+        if not teacher or teacher == "No teachers found":
+            return
+
+        # 1) Make sure the controller knows the teacher (export_full_summary uses this)
+        self.summary.processed_results = self.processed_results
+        try:
+            # SummaryFormController expects a current_teacher attr
+            self.summary.current_teacher = teacher
+        except Exception:
+            pass
+
+       
+        ay, sem = self._infer_ay_and_sem_from_today()
+        try:
+            if getattr(self.summary, "semester_var", None):
+               self.summary.semester_var.set(sem)
+            if getattr(self.summary, "academic_year_var", None):
+               self.summary.academic_year_var.set(ay)
+        except Exception:
+            pass
+
+        
+        template_path = "template.xlsx"
+        save_path = None
+        if hasattr(self.summary, "export_full_summary"):
+            save_path = self.summary.export_full_summary(template_path)  # returns the file it saved
+
+        # 3) Move/rename to your unified naming/location so ScanPage & Dean match
+        try:
+            from utils import get_summary_export_path
+            ay, sem = self._infer_ay_and_sem_from_today()
+            target_path = get_summary_export_path(teacher, ay, sem)
+
+            if save_path and os.path.exists(save_path):
+                # ensure target dir exists
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                import shutil
+                # replace/overwrite to keep single source of truth
+                try:
+                    os.replace(save_path, target_path)
+                except Exception:
+                    shutil.copyfile(save_path, target_path)
+            else:
+                # If helper didn’t produce a file, fall back to simple writer
+                include_raters = ("Student", "Peer", "Self", "Dean")
+                self._fallback_write_excel(target_path, teacher, include_raters)
+        except Exception as e:
+            print(f"⚠️ Dean export normalization failed: {e}")

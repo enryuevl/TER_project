@@ -13,6 +13,7 @@ import pythoncom
 from utils import set_sidebar_state
 import utils
 import datetime
+import shutil
 
 class ScanPage:
     def __init__(self, master, processed_results):
@@ -23,6 +24,10 @@ class ScanPage:
         self.annotated_cache = {}  # Cache for annotated images
         self.current_scan_dir = None
         self.load_results()
+        # call summary controller
+        from summary_helpers import SummaryFormController
+        self.summary = SummaryFormController(self.processed_results, db_module=db)
+
 
         # Tkinter variables
         self.teacher_var = StringVar()
@@ -264,10 +269,8 @@ class ScanPage:
             try:
                 pythoncom.CoInitialize()
                 teacher = self.teacher_var.get()
-                scan_dir = self._build_scan_dir(teacher)
-                self.current_scan_dir = scan_dir
-                start_idx = self._next_scan_index(scan_dir)
 
+                self.current_scan_dir = self._build_scan_dir(teacher)
                 # session log: scan_started
                 user = utils.get_current_user()
                 db.log_activity(
@@ -279,14 +282,18 @@ class ScanPage:
                     rater_type=self.rater_var.get() if hasattr(self, "rater_var") else None
                 )
 
-                scanner = WIAScanner(teacher_name=teacher, output_dir=scan_dir)
+                # Initialize scanner → create a fresh batch so scan names reset every run
+                scanner = WIAScanner(teacher_name=teacher, output_dir=self.current_scan_dir)
                 info = scanner.initialize()
                 self.status_label.configure(text=f"Scanner detected: {info['name']}")
 
-                pages = scanner.scan_batch()
+
+                scanner.create_batch_dir()                 # per-batch folder, scan_001.bmp, scan_002.bmp, ...
+                pages, batch_dir = scanner.scan_batch()
 
                 if pages > 0:
-                    results, qc_errors = self.process_work_folder(teacher, base_dir=scan_dir)
+                    # 🔹 Process ONLY this batch; saving uses gapless global numbers
+                    results, qc_errors = self.process_work_folder(teacher, src_folder=batch_dir)
 
                     # Show one message if there were any rejected pages
                     if qc_errors:
@@ -303,7 +310,11 @@ class ScanPage:
                         self.processed_results.update(results)
                         self.save_results()
                         self._refresh_teacher_progress()
-
+                        # Update excel for current teacher
+                        try:
+                            self._auto_export_summary(teacher)
+                        except Exception as ex:
+                            messagebox.showerror("Excel Export Error", str(ex))
 
                         # preview only for current rater (if any clean files)
                         rater = self.rater_var.get() if hasattr(self, "rater_var") else "Unknown"
@@ -325,27 +336,21 @@ class ScanPage:
                     # status label
                     if not results and not qc_errors:
                         self.status_label.configure(text="No new documents found.")
-                        self.set_controls_state("normal")
-                        set_sidebar_state("normal")
                     else:
                         self.status_label.configure(text="Processing complete!")
-                        self.set_controls_state("normal")
-                        set_sidebar_state("normal")
                 else:
                     self.status_label.configure(text="No documents found.")
-                    self.set_controls_state("normal")
-                    set_sidebar_state("normal")
 
             except Exception as e:
                 messagebox.showerror("Scan Error", str(e))
             finally:
                 pythoncom.CoUninitialize()
                 self.set_controls_state("normal")
+                set_sidebar_state("normal")
                 if hasattr(self, "wait_popup") and self.wait_popup.winfo_exists():
                     self.wait_popup.destroy()
 
-
-
+   
 
         # ✅ disable controls and show popup
         self.set_controls_state("disabled")
@@ -382,17 +387,45 @@ class ScanPage:
 
 
     def scan_existing(self):
-        teacher = self.teacher_var.get()
+        teacher = (self.teacher_var.get() or "").strip()
+        if not teacher or teacher in ("Loading...", "No teachers found"):
+            messagebox.showwarning("No Teacher", "Please select a teacher.")
+            return
+
         scan_dir = self._build_scan_dir(teacher)
         self.current_scan_dir = scan_dir
+
         results, qc_errors = self.process_work_folder(teacher, base_dir=scan_dir)
+
         if qc_errors:
             lines = [f"• {fname} → {reason}" for fname, reason in qc_errors]
             messagebox.showerror("Incomplete / Blank Pages Detected", "\n".join(lines))
+
         if results:
+            # merge in-memory
             self.processed_results.update(results)
+
+            # persist to PKL (optional but recommended for consistency)
+            try:
+                self.save_results()
+            except Exception as e:
+                messagebox.showerror("Save Error", str(e))
+
+            # refresh preview & progress
             rater = self.rater_var.get() if hasattr(self, "rater_var") else "Unknown"
             self.update_preview(results.get(teacher, {}).get(rater, []))
+            self._refresh_teacher_progress()
+
+            # export Excel only when there were new results
+            try:
+                self._auto_export_summary(teacher)
+            except Exception as ex:
+                messagebox.showerror("Excel Export Error", str(ex))
+        else:
+            # nothing new found; keep UI consistent
+            self._refresh_teacher_progress()
+
+
 
     def clear_scan(self):
         self.img_label.configure(image=None, text="No image loaded")
@@ -429,89 +462,129 @@ class ScanPage:
         self._refresh_teacher_progress()
         messagebox.showinfo("Done", "Evaluation processed successfully!")
 
-    def process_work_folder(self, teacher, base_dir=None):
-        folder = base_dir or self._build_scan_dir(teacher)
-        # key by absolute folder path so AY/Sem/Dept are naturally separated
-        key = os.path.abspath(folder)
-        if not os.path.exists(folder):
-            os.makedirs(folder, exist_ok=True)
-        new_results = []
-        qc_errors = []
-        last_time = self.last_processed_times.get(key, 0)
+    def process_work_folder(self, teacher, src_folder=None, base_dir=None):
+        
+        import time
 
+        # final save folder = Dept/AY/Sem/Teacher
+        teacher_root = base_dir or self._build_scan_dir(teacher)
+        os.makedirs(teacher_root, exist_ok=True)
 
-        # --- use dropdown rater type ---
+        # prefer explicit batch folder
+        if src_folder is None:
+            src_folder = teacher_root
+        os.makedirs(src_folder, exist_ok=True)
+
+        counter_file = os.path.join(teacher_root, "saved_counter.txt")
+
+        def _load_saved_counter():
+            try:
+                if os.path.exists(counter_file):
+                    with open(counter_file, "r") as f:
+                        return int(f.read().strip())
+            except Exception:
+                pass
+            return 1
+
+        def _store_saved_counter(n: int):
+            try:
+                with open(counter_file, "w") as f:
+                    f.write(str(n))
+            except Exception:
+                pass
+
+        save_num = _load_saved_counter()
+        new_results, qc_errors = [], []
         rater = self.rater_var.get() if hasattr(self, "rater_var") else "Unknown"
 
-        for file in os.scandir(folder):
-            if not file.name.lower().endswith(".bmp"):
+        # --- process files in stable order
+        for entry in sorted(os.scandir(src_folder), key=lambda e: e.name.lower()):
+            if not entry.name.lower().endswith(".bmp"):
                 continue
-            if file.stat().st_mtime <= last_time:
+
+            img_path = os.path.join(src_folder, entry.name)
+            if not os.path.exists(img_path):
+                qc_errors.append((entry.name, f"source missing at {img_path}"))
                 continue
 
-            filepath = os.path.join(folder, file.name)
-            img = cv2.imread(filepath)
+            # short wait in case Windows still holds the handle
+            for _ in range(10):
+                try:
+                    with open(img_path, "rb"):
+                        pass
+                    break
+                except Exception:
+                    time.sleep(0.05)
 
-            result_dict, annotated_img = main_code.process_sections(img)
+            img = cv2.imread(img_path)
+            if img is None:
+                qc_errors.append((entry.name, "cannot read image (locked/corrupt)"))
+                continue
 
-            # ---- QC check for blanks/incomplete ----
+            try:
+                result_dict, annotated_img = main_code.process_sections(img)
+            except Exception as e:
+                qc_errors.append((entry.name, f"processing error: {e}"))
+                continue
+
+            # 🔒 STRICT QC (your rule): all 4 sections complete; rejects are discarded
             is_ok, page_blank, missing_map, total_detected = self._qc_check_page(result_dict)
-
             if not is_ok:
-                # Build a readable reason
                 if page_blank:
                     reason = "no marks detected"
                 else:
-                    summary = "; ".join(f"{sec} missing {','.join(map(str, miss))}"
-                                        for sec, miss in missing_map.items() if miss)
-                    reason = f"incomplete ({summary})"
-
-                qc_errors.append((file.name, reason))
-
-                # Delete the bad image so it won't linger
+                    parts = [f"{sec} missing {','.join(map(str, miss))}"
+                            for sec, miss in missing_map.items() if miss]
+                    reason = "incomplete (" + "; ".join(parts) + ")"
+                qc_errors.append((entry.name, reason))
+                # optional: remove the bad raw scan so it doesn’t linger in _incoming
                 try:
-                    os.remove(filepath)
+                    os.remove(img_path)
                 except Exception:
                     pass
+                continue  # ❌ do not move, do not consume a save number
 
-                # DO NOT add to new_results nor update last_processed_times for this file
+            # ✅ ACCEPTED → assign next gapless name in teacher_root
+            final_name = f"{save_num}.bmp"                 # or f"{save_num:03d}.bmp"
+            final_path = os.path.join(teacher_root, final_name)
+            os.makedirs(os.path.dirname(final_path), exist_ok=True)
+
+            try:
+                shutil.move(img_path, final_path)
+            except Exception as e:
+                exists_src = os.path.exists(img_path)
+                qc_errors.append((entry.name, f"move failed to {final_name}: {e} (src_exists={exists_src})"))
                 continue
 
-            # ---- Keep only clean pages ----
-            new_results.append((file.name, result_dict))
-            self.annotated_cache[os.path.join(folder, file.name)] = annotated_img
-            self.last_processed_times[key] = max(last_time, file.stat().st_mtime)
+            # cache annotated preview with FULL PATH key
+            self.annotated_cache[final_path] = annotated_img
+            new_results.append((final_name, result_dict))
+            save_num += 1
 
-        # ✅ Special rule: only one "Self" entry per teacher
-        if rater == "Self":
-            if len(new_results) > 1:
-                # Keep only the first scanned result
-                kept = new_results[0:1]
-                # Append to QC errors for visibility
-                for extra in new_results[1:]:
-                    qc_errors.append((extra[0], "Self evaluation allows only one page (discarded)"))
-                    # Also delete extra images if they still exist (should exist because passed QC)
-                    extra_path = os.path.join(folder, extra[0])
-                    try:
-                        os.remove(extra_path)
-                    except Exception:
-                        pass
-                new_results = kept
+        _store_saved_counter(save_num)
 
-            existing = self.processed_results.get(teacher, {}).get("Self", [])
-            if existing:
-                overwrite = messagebox.askyesno(
-                    "Overwrite Self Evaluation",
-                    f"A self-evaluation already exists for {teacher}.\nDo you want to overwrite it?"
-                )
-                if overwrite:
-                    # overwrite with new (clean) results
-                    return ({teacher: {"Self": new_results}} if new_results else {}), qc_errors
-                else:
-                    return ({}, qc_errors)
+        # cleanup empty batch dir (optional)
+        try:
+            if src_folder != teacher_root and not any(os.scandir(src_folder)):
+                os.rmdir(src_folder)
+        except Exception:
+            pass
 
-        # Normal case: return clean results only
-        return ({teacher: {rater: new_results}} if new_results else {}), qc_errors
+        # Only one "Self" page allowed (keep first that PASSED QC)
+        if rater == "Self" and len(new_results) > 1:
+            keep = new_results[:1]
+            for drop_name, _ in new_results[1:]:
+                try:
+                    os.remove(os.path.join(teacher_root, drop_name))
+                except Exception:
+                    pass
+            new_results = keep
+            # (we don't roll back the counter)
+
+        results_dict = {teacher: {rater: new_results}} if new_results else {}
+        return results_dict, qc_errors
+
+
 
 
 
@@ -568,6 +641,99 @@ class ScanPage:
 
         except Exception as e:
             print(f"❌ Error saving results: {e}")
+
+    def _auto_export_summary(self, teacher: str):
+        if not teacher:
+            return
+
+        # Ensure the controller sees freshest results
+        if hasattr(self, "summary") and self.summary:
+            self.summary.processed_results = self.processed_results
+            try:
+                self.summary.current_teacher = teacher
+            except Exception:
+                pass
+
+        # Period
+        ay, sem = self._infer_ay_and_sem_from_today()
+        sem_label = {"1st": "1st Sem", "2nd": "2nd Sem"}.get(sem, "Summer")
+        # TARGET folder = the SAME teacher folder used for scans/results
+        teacher_root = self._build_scan_dir(teacher)
+        os.makedirs(teacher_root, exist_ok=True)
+
+        # TARGET filename & path
+        target_name = f"{teacher}, {ay}, {sem_label}.xlsx"
+        target_path = os.path.join(teacher_root, target_name)
+
+        # Try controller-provided writers (write directly to target_path when possible)
+        try:
+            if hasattr(self.summary, "save_summary_excel"):
+                self.summary.save_summary_excel(target_path, teacher, include_raters=("Student", "Peer", "Self", "Dean"))
+                return
+            if hasattr(self.summary, "export_summary_excel"):
+                self.summary.export_summary_excel(target_path, teacher, include_raters=("Student", "Peer", "Self", "Dean"))
+                return
+        except Exception as ex:
+            print(f"⚠️ summary helper direct-write failed: {ex}")
+
+        # Some helpers only return a produced file path; normalize it to our target
+        produced_path = None
+        try:
+            if hasattr(self.summary, "export_full_summary"):
+                # Many implementations produce a temp file based on template
+                produced_path = self.summary.export_full_summary("template.xlsx")
+        except Exception as ex:
+            print(f"⚠️ export_full_summary failed: {ex}")
+            produced_path = None
+
+        # If we got a file from the helper, move/replace it to target_path
+        if produced_path and os.path.exists(produced_path):
+            try:
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                try:
+                    os.replace(produced_path, target_path)
+                except Exception:
+                    shutil.copyfile(produced_path, target_path)
+                    try:
+                        os.remove(produced_path)
+                    except Exception:
+                        pass
+                return
+            except Exception as ex:
+                print(f"⚠️ Could not normalize exported excel: {ex}")
+
+        # Fallback: build a minimal workbook so we still produce the correct file in the correct place
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Summary"
+        ws.cell(row=1, column=1, value=f"Teacher: {teacher}")
+        ws.cell(row=2, column=1, value=f"AY/Sem: {ay} / {sem_label}")
+
+        # dump current results minimally
+        teacher_bucket = self.processed_results.get(teacher, {}) or {}
+        row = 4
+        for rater in ("Student", "Peer", "Self", "Dean"):
+            docs = teacher_bucket.get(rater, [])
+            if not docs:
+                continue
+            ws.cell(row=row, column=1, value=rater); row += 1
+            for fname, result_dict in docs:
+                ws.cell(row=row, column=1, value=fname); row += 1
+                for section, rows_map in result_dict.items():
+                    ws.cell(row=row, column=1, value=section); row += 1
+                    for idx, score in sorted(rows_map.items()):
+                        ws.cell(row=row, column=1, value=idx)
+                        ws.cell(row=row, column=2, value=score)
+                        row += 1
+                row += 1
+            row += 1
+
+        wb.save(target_path)
+
+
+
 
     def save_csv(self):
         if not self.processed_results:

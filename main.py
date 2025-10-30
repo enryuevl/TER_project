@@ -176,9 +176,9 @@ def create_app(role: str, username: str, department_id: int | None):
     if role == "admin":
         allowed = {"Dashboard", "Scan", "Admin", "Results", "Data Management"}
     elif role == "dean":
-        allowed = {"Dashboard", "Scan", "Admin", "Results", "Data Management"}  # hide Database
+        allowed = {"Dashboard", "Scan", "Admin", "Results", "Data Management"}  
     else:  # operator or unknown
-        allowed = {"Dashboard", "Scan", "Results", "Data Management"}  # hide Admin + Database
+        allowed = {"Dashboard", "Scan", "Results", "Data Management"}  
 
     for name, action in nav_actions.items():
         if name in allowed:

@@ -1,8 +1,8 @@
 import cv2
 import numpy as np
+import os, re
+import db
 
-import cv2
-import numpy as np
 
 # --- Current user context for logging ----------------------------------------
 CURRENT_USER = {"name": None, "role": None, "department_id": None}
@@ -182,3 +182,15 @@ def set_sidebar_state(state="normal"):
             btn.configure(state=state)
         except Exception:
             pass
+
+# --- Summary export naming helpers ---
+
+def build_summary_filename(teacher: str, ay: str, sem: str) -> str:
+    # remove illegal filename chars and trailing dots/spaces
+    safe_teacher = re.sub(r'[<>:"/\\|?*]+', '-', (teacher or '')).strip().strip('.')
+    return f"{safe_teacher} - Summary_{ay}_{sem}.xlsx"
+
+def get_summary_export_path(teacher: str, ay: str, sem: str, base_dir: str | None = None) -> str:
+    if base_dir is None:
+        base_dir = os.path.dirname(db.get_default_db_path())
+    return os.path.join(base_dir, build_summary_filename(teacher, ay, sem))
