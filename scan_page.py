@@ -51,6 +51,18 @@ class ScanPage:
         """Create the layout and widgets."""
         for widget in self.master.winfo_children():
             widget.destroy()
+            
+        
+        # ⬅️ Add red header bar
+        title_bar = CTkFrame(self.master, fg_color="#BF3131", height=70, corner_radius=10)
+        title_bar.pack(fill="x", padx=20, pady=(10, 15))
+        CTkLabel(
+            title_bar,
+            text="Scan & Preview",
+            font=("Montserrat", 20, "bold"),
+            text_color="#FFFFFF"
+        ).pack(side="left", padx=25, pady=12)
+
 
         self.content_frame = CTkFrame(self.master, fg_color="#F8F9FA")
         self.content_frame.pack(fill="both", expand=True, padx=20, pady=20)
@@ -72,6 +84,7 @@ class ScanPage:
         right_column = CTkFrame(main_layout, fg_color="transparent")
         right_column.grid(row=0, column=1, sticky="nsew", padx=10)
         self._build_preview_panel(right_column)
+        
 
     def _build_scanner_controls(self, parent):
         scanner_frame = CTkFrame(parent, fg_color="#FFFFFF", corner_radius=10)
@@ -119,11 +132,24 @@ class ScanPage:
             text_color="#334155"
         ).pack(pady=(10, 5), padx=15, anchor="w")
 
+        # --- Teacher selection ---
         self.teacher_dropdown = CTkOptionMenu(
-            teacher_frame, variable=self.teacher_var, values=["Loading..."],
-            fg_color="#BF3131", button_color="#691612",
-            text_color="#FFFFFF", font=('Montserrat', 14),
-            width=250, height=35
+            teacher_frame,
+            variable=self.teacher_var,
+            values=["Loading..."],
+            width=250, height=35, font=('Montserrat', 14),
+
+            # Button (closed state)
+            fg_color="#BF3131",          # red pill
+            button_color="#691612",      # deep red
+            button_hover_color="#8E1616",# dark-crimson hover
+            text_color="#FFFFFF",
+
+            # Dropdown (opened list)
+            dropdown_fg_color="#FFFFFF",       # white list bg
+            dropdown_hover_color="#F3D0D0",    # soft red hover (keeps text readable)
+            dropdown_text_color="#333333",
+            dropdown_font=('Montserrat', 14),
         )
         self.teacher_dropdown.pack(padx=15, pady=(10, 5))
 
@@ -135,12 +161,22 @@ class ScanPage:
         ).pack(pady=(10, 5), padx=15, anchor="w")
 
         self.rater_var = StringVar(value="Student")  # default option
+        # --- Rater type selection ---
         self.rater_dropdown = CTkOptionMenu(
-            teacher_frame, variable=self.rater_var,
+            teacher_frame,
+            variable=self.rater_var,
             values=["Student", "Peer", "Self"],
-            fg_color="#BF3131", button_color="#691612",
-            text_color="#FFFFFF", font=('Montserrat', 14),
-            width=250, height=35
+            width=250, height=35, font=('Montserrat', 14),
+
+            fg_color="#BF3131",
+            button_color="#691612",
+            button_hover_color="#8E1616",
+            text_color="#FFFFFF",
+
+            dropdown_fg_color="#FFFFFF",
+            dropdown_hover_color="#F3D0D0",
+            dropdown_text_color="#333333",
+            dropdown_font=('Montserrat', 14),
         )
         self.rater_dropdown.pack(padx=15, pady=(10, 5))
         self.teacher_dropdown.configure(command=lambda _: self._refresh_teacher_progress())
@@ -164,19 +200,6 @@ class ScanPage:
                                         font=('Montserrat', 12), text_color="#64748B")
         self.scan_info_label.pack(anchor="w", padx=15, pady=5)
 
-        # Action buttons
-        action_frame = CTkFrame(results_frame, fg_color="transparent")
-        action_frame.pack(fill="x", pady=10, padx=15)
-
-        self.process_button = CTkButton(action_frame, text="Process Evaluation",
-                                        command=self.process_scan,
-                                        fg_color="#94A3B8", state="disabled")
-        self.process_button.pack(fill="x", pady=5)
-
-        self.save_button = CTkButton(action_frame, text="Save Results",
-                                     command=self.save_csv,
-                                     fg_color="#94A3B8", state="disabled")
-        self.save_button.pack(fill="x", pady=5)
 
     def _build_preview_panel(self, parent):
         preview_frame = CTkFrame(parent, fg_color="#FFFFFF", corner_radius=10)
@@ -185,10 +208,21 @@ class ScanPage:
         CTkLabel(preview_frame, text="Document Preview",
                 font=('Montserrat', 18, 'bold'), text_color="#334155").pack(pady=(15, 0))
 
+                # --- Preview file chooser ---
         self.document_listbox = CTkOptionMenu(
-            preview_frame, values=["No documents loaded"],
-            fg_color="#BF3131", button_color="#691612",
-            text_color="#FFFFFF", font=('Montserrat', 14), width=250, height=35
+            preview_frame,
+            values=["No documents loaded"],
+            width=250, height=35, font=('Montserrat', 14),
+
+            fg_color="#BF3131",
+            button_color="#691612",
+            button_hover_color="#8E1616",
+            text_color="#FFFFFF",
+
+            dropdown_fg_color="#FFFFFF",
+            dropdown_hover_color="#F3D0D0",
+            dropdown_text_color="#333333",
+            dropdown_font=('Montserrat', 14),
         )
         self.document_listbox.pack(padx=20, pady=10, fill="x")
 
