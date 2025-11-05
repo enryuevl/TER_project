@@ -14,6 +14,7 @@ from utils import set_sidebar_state
 import utils
 import datetime
 import shutil
+import json
 
 class ScanPage:
     def __init__(self, master, processed_results):
@@ -38,6 +39,8 @@ class ScanPage:
         self.teacher_name_to_id = {}
         self.subject_code_to_id = {}
         self.block_label_to_id = {}
+        self.subject_label_to_id = {}   
+        self.subject_code_by_label = {}
 
         # Build UI
         self._build_ui()
@@ -91,95 +94,94 @@ class ScanPage:
         scanner_frame.pack(fill="x", pady=10)
 
         CTkLabel(scanner_frame, text="Document Scanner",
-                 font=('Montserrat', 18, 'bold'),
-                 text_color="#334155").pack(pady=(15, 10), padx=15, anchor="w")
+                font=('Montserrat', 18, 'bold'),
+                text_color="#334155").pack(pady=(15, 10), padx=15, anchor="w")
 
         button_frame = CTkFrame(scanner_frame, fg_color="transparent")
         button_frame.pack(fill="x", pady=10, padx=15)
 
-        buttons = [
-            {"text": "Scan", "command": self.start_scan, "fg_color": "#691612"},
-            {"text": "Check Existing", "command": self.scan_existing, "fg_color": "#BF3131"},
-            {"text": "Clear Documents", "command": self.clear_scan, "fg_color": "#AC5353"}
-        ]
+        self.btn_scan = CTkButton(
+            button_frame, text="Scan", command=self.start_scan,
+            fg_color="#691612", hover_color="#550d0a",
+            text_color="#FFFFFF", font=('Montserrat', 14), height=40, corner_radius=8
+        )
+        self.btn_scan.pack(fill="x", pady=5)
 
-        for cfg in buttons:
-            CTkButton(button_frame,
-                      text=cfg["text"],
-                      command=cfg["command"],
-                      fg_color=cfg["fg_color"],
-                      hover_color="#550d0a",
-                      text_color="#FFFFFF",
-                      font=('Montserrat', 14),
-                      height=40,
-                      corner_radius=8).pack(fill="x", pady=5)
+        self.btn_check_existing = CTkButton(
+            button_frame, text="Check Existing", command=self.scan_existing,
+            fg_color="#BF3131", hover_color="#550d0a",
+            text_color="#FFFFFF", font=('Montserrat', 14), height=40, corner_radius=8
+        )
+        self.btn_check_existing.pack(fill="x", pady=5)
 
-        # Scanner status
+        self.btn_clear_docs = CTkButton(
+            button_frame, text="Clear Documents", command=self.clear_scan,
+            fg_color="#AC5353", hover_color="#550d0a",
+            text_color="#FFFFFF", font=('Montserrat', 14), height=40, corner_radius=8
+        )
+        self.btn_clear_docs.pack(fill="x", pady=5)
+
         self.status_label = CTkLabel(scanner_frame,
-                                     text="Scanner disconnected",
-                                     font=('Montserrat', 14),
-                                     text_color="#64748B")
+                                    text="Scanner disconnected",
+                                    font=('Montserrat', 14),
+                                    text_color="#64748B")
         self.status_label.pack(pady=5, padx=15, anchor="w")
 
     def _build_teacher_dropdown(self, parent):
         teacher_frame = CTkFrame(parent, fg_color="#FFFFFF", corner_radius=10)
         teacher_frame.pack(fill="x", pady=10)
 
-        # --- Teacher selection ---
-        CTkLabel(
-            teacher_frame, text="Select Teacher",
-            font=('Montserrat', 16, 'bold'),
-            text_color="#334155"
+        # --- Teacher ---
+        CTkLabel(teacher_frame, text="Select Teacher",
+                font=('Montserrat', 16, 'bold'), text_color="#334155"
         ).pack(pady=(10, 5), padx=15, anchor="w")
 
-        # --- Teacher selection ---
         self.teacher_dropdown = CTkOptionMenu(
-            teacher_frame,
-            variable=self.teacher_var,
-            values=["Loading..."],
+            teacher_frame, variable=self.teacher_var, values=["Loading..."],
             width=250, height=35, font=('Montserrat', 14),
-
-            # Button (closed state)
-            fg_color="#BF3131",          # red pill
-            button_color="#691612",      # deep red
-            button_hover_color="#8E1616",# dark-crimson hover
+            fg_color="#BF3131", button_color="#691612", button_hover_color="#8E1616",
             text_color="#FFFFFF",
-
-            # Dropdown (opened list)
-            dropdown_fg_color="#FFFFFF",       # white list bg
-            dropdown_hover_color="#F3D0D0",    # soft red hover (keeps text readable)
-            dropdown_text_color="#333333",
-            dropdown_font=('Montserrat', 14),
+            dropdown_fg_color="#FFFFFF", dropdown_hover_color="#F3D0D0",
+            dropdown_text_color="#333333", dropdown_font=('Montserrat', 14),
         )
         self.teacher_dropdown.pack(padx=15, pady=(10, 5))
 
-        # --- Rater type selection ---
-        CTkLabel(
-            teacher_frame, text="Select Rater Type",
-            font=('Montserrat', 16, 'bold'),
-            text_color="#334155"
-        ).pack(pady=(10, 5), padx=15, anchor="w")
+        # --- Subject (auto-populated after picking teacher) ---
+        CTkLabel(teacher_frame, text="Select Subject",
+                font=('Montserrat', 16, 'bold'), text_color="#334155"
+        ).pack(pady=(12, 5), padx=15, anchor="w")
 
-        self.rater_var = StringVar(value="Student")  # default option
-        # --- Rater type selection ---
-        self.rater_dropdown = CTkOptionMenu(
-            teacher_frame,
-            variable=self.rater_var,
-            values=["Student", "Peer", "Self"],
+        self.subject_dropdown = CTkOptionMenu(
+            teacher_frame, variable=self.subject_var,
+            values=["— Select a teacher first —"],
             width=250, height=35, font=('Montserrat', 14),
-
-            fg_color="#BF3131",
-            button_color="#691612",
-            button_hover_color="#8E1616",
+            fg_color="#BF3131", button_color="#691612", button_hover_color="#8E1616",
             text_color="#FFFFFF",
+            dropdown_fg_color="#FFFFFF", dropdown_hover_color="#F3D0D0",
+            dropdown_text_color="#333333", dropdown_font=('Montserrat', 14),
+            state="disabled",
+        )
+        self.subject_dropdown.pack(padx=15, pady=(10, 5))
 
-            dropdown_fg_color="#FFFFFF",
-            dropdown_hover_color="#F3D0D0",
-            dropdown_text_color="#333333",
-            dropdown_font=('Montserrat', 14),
+        # --- Rater ---
+        CTkLabel(teacher_frame, text="Select Rater Type",
+                font=('Montserrat', 16, 'bold'), text_color="#334155"
+        ).pack(pady=(12, 5), padx=15, anchor="w")
+
+        self.rater_var = StringVar(value="Student")
+        self.rater_dropdown = CTkOptionMenu(
+            teacher_frame, variable=self.rater_var, values=["Student", "Peer", "Self"],
+            width=250, height=35, font=('Montserrat', 14),
+            fg_color="#BF3131", button_color="#691612", button_hover_color="#8E1616",
+            text_color="#FFFFFF",
+            dropdown_fg_color="#FFFFFF", dropdown_hover_color="#F3D0D0",
+            dropdown_text_color="#333333", dropdown_font=('Montserrat', 14),
         )
         self.rater_dropdown.pack(padx=15, pady=(10, 5))
-        self.teacher_dropdown.configure(command=lambda _: self._refresh_teacher_progress())
+
+        # Bindings
+        self.teacher_dropdown.configure(command=lambda *_: self._on_teacher_change())
+        self.subject_dropdown.configure(command=lambda *_: self._refresh_teacher_progress())
 
 
 
@@ -299,13 +301,47 @@ class ScanPage:
 
     # ---------------- SCANNER ACTIONS ---------------- #
     def start_scan(self):
+        # -------- fast, synchronous validations (before disabling UI) --------
+        teacher = (self.teacher_var.get() or "").strip()
+        if not teacher or teacher in ("Loading...", "No teachers found"):
+            messagebox.showwarning("Select Teacher", "Please select a teacher first.")
+            return
+
+        label = self.subject_var.get() if hasattr(self, "subject_var") else ""
+        subj_code = self.subject_code_by_label.get(label, "")
+        if not subj_code:
+            messagebox.showwarning("Select Subject", "Please select a subject for this scan.")
+            return
+
+        # -------- disable controls + show "wait" popup --------
+        self.set_controls_state("disabled")
+        set_sidebar_state("disabled")
+
+        self.wait_popup = CTkToplevel(self.master)
+        self.wait_popup.title("Please Wait")
+
+        popup_w, popup_h = 300, 120
+        screen_w = self.wait_popup.winfo_screenwidth()
+        screen_h = self.wait_popup.winfo_screenheight()
+        x = (screen_w // 2) - (popup_w // 2)
+        y = (screen_h // 2) - (popup_h // 2)
+        self.wait_popup.geometry(f"{popup_w}x{popup_h}+{x}+{y}")
+        self.wait_popup.resizable(False, False)
+        self.wait_popup.grab_set()
+        CTkLabel(self.wait_popup, text="Scanning in progress...\nPlease wait.",
+                font=("Roboto", 14), text_color="#374151").pack(expand=True, pady=30)
+
+        # -------- worker thread --------
         def worker():
             try:
                 pythoncom.CoInitialize()
-                teacher = self.teacher_var.get()
+
+                # cache current selections for the thread
+                rater = self.rater_var.get() if hasattr(self, "rater_var") else "Student"
 
                 self.current_scan_dir = self._build_scan_dir(teacher)
-                # session log: scan_started
+
+                # activity log
                 user = utils.get_current_user()
                 db.log_activity(
                     action="scan_started",
@@ -313,109 +349,69 @@ class ScanPage:
                     actor_role=user.get("role"),
                     department_id=user.get("department_id"),
                     teacher_name=teacher,
-                    rater_type=self.rater_var.get() if hasattr(self, "rater_var") else None
+                    rater_type=rater,
+                    details={"subject_code": subj_code}
                 )
 
-                # Initialize scanner → create a fresh batch so scan names reset every run
+                # scan
                 scanner = WIAScanner(teacher_name=teacher, output_dir=self.current_scan_dir)
                 info = scanner.initialize()
                 self.status_label.configure(text=f"Scanner detected: {info['name']}")
-
-
-                scanner.create_batch_dir()                 # per-batch folder, scan_001.bmp, scan_002.bmp, ...
+                scanner.create_batch_dir()
                 pages, batch_dir = scanner.scan_batch()
 
                 if pages > 0:
-                    # 🔹 Process ONLY this batch; saving uses gapless global numbers
                     results, qc_errors = self.process_work_folder(teacher, src_folder=batch_dir)
 
-                    # Show one message if there were any rejected pages
                     if qc_errors:
                         lines = [f"• {fname} → {reason}" for fname, reason in qc_errors]
                         messagebox.showerror(
                             "Incomplete / Blank Pages Detected",
                             "The following documents have missing keys and were discarded:\n\n"
-                            + "\n".join(lines)
-                            + "\n\nPlease rescan those page(s)."
+                            + "\n".join(lines) + "\n\nPlease rescan those page(s)."
                         )
 
                     if results:
-                        # merge into in-memory results + persist
                         self.processed_results.update(results)
                         self.save_results()
                         self._refresh_teacher_progress()
-                        # Update excel for current teacher
                         try:
                             self._auto_export_summary(teacher)
                         except Exception as ex:
                             messagebox.showerror("Excel Export Error", str(ex))
 
-                        # preview only for current rater (if any clean files)
-                        rater = self.rater_var.get() if hasattr(self, "rater_var") else "Unknown"
                         teacher_files = results.get(teacher, {}).get(rater, [])
                         if teacher_files:
                             self.update_preview(teacher_files)
 
-                    # session log: scan_completed
                     db.log_activity(
                         action="scan_completed",
                         actor_name=user.get("name"),
                         actor_role=user.get("role"),
                         department_id=user.get("department_id"),
                         teacher_name=teacher,
-                        rater_type=self.rater_var.get() if hasattr(self, "rater_var") else None,
-                        details={"pages_scanned": int(pages)}
+                        rater_type=rater,
+                        details={"pages_scanned": int(pages), "subject_code": subj_code}
                     )
 
-                    # status label
-                    if not results and not qc_errors:
-                        self.status_label.configure(text="No new documents found.")
-                    else:
-                        self.status_label.configure(text="Processing complete!")
+                    self.status_label.configure(text="Processing complete!" if (results or qc_errors) else "No new documents found.")
                 else:
                     self.status_label.configure(text="No documents found.")
 
             except Exception as e:
                 messagebox.showerror("Scan Error", str(e))
             finally:
-                pythoncom.CoUninitialize()
+                try:
+                    pythoncom.CoUninitialize()
+                except Exception:
+                    pass
                 self.set_controls_state("normal")
                 set_sidebar_state("normal")
-                if hasattr(self, "wait_popup") and self.wait_popup.winfo_exists():
-                    self.wait_popup.destroy()
-
-   
-
-        # ✅ disable controls and show popup
-        self.set_controls_state("disabled")
-        set_sidebar_state("disabled")
-        self.wait_popup = CTkToplevel(self.master)
-        self.wait_popup.title("Please Wait")
-
-        # desired popup size
-        popup_w, popup_h = 300, 120
-
-        # get screen size
-        screen_w = self.wait_popup.winfo_screenwidth()
-        screen_h = self.wait_popup.winfo_screenheight()
-
-        # calculate x, y for centering
-        x = (screen_w // 2) - (popup_w // 2)
-        y = (screen_h // 2) - (popup_h // 2)
-
-        # set geometry with position
-        self.wait_popup.geometry(f"{popup_w}x{popup_h}+{x}+{y}")
-
-        # optional: disable resizing
-        self.wait_popup.resizable(False, False)
-
-        self.wait_popup.grab_set()
-        CTkLabel(
-            self.wait_popup,
-            text="Scanning in progress...\nPlease wait.",
-            font=("Roboto", 14),
-            text_color="#374151"
-        ).pack(expand=True, pady=30)
+                try:
+                    if hasattr(self, "wait_popup") and self.wait_popup.winfo_exists():
+                        self.wait_popup.destroy()
+                except Exception:
+                    pass
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -458,8 +454,6 @@ class ScanPage:
         else:
             # nothing new found; keep UI consistent
             self._refresh_teacher_progress()
-
-
 
     def clear_scan(self):
         self.img_label.configure(image=None, text="No image loaded")
@@ -585,6 +579,10 @@ class ScanPage:
 
             try:
                 shutil.move(img_path, final_path)
+                current_label = self.subject_var.get() if hasattr(self, "subject_var") else ""
+                current_code  = self.subject_code_by_label.get(current_label, "")
+                self._save_subject_meta(teacher_root, final_name, current_code)
+
             except Exception as e:
                 exists_src = os.path.exists(img_path)
                 qc_errors.append((entry.name, f"move failed to {final_name}: {e} (src_exists={exists_src})"))
@@ -617,10 +615,6 @@ class ScanPage:
 
         results_dict = {teacher: {rater: new_results}} if new_results else {}
         return results_dict, qc_errors
-
-
-
-
 
     # ---------------- RESULT HANDLERS ---------------- #
 
@@ -691,21 +685,35 @@ class ScanPage:
         # Period
         ay, sem = self._infer_ay_and_sem_from_today()
         sem_label = {"1st": "1st Sem", "2nd": "2nd Sem"}.get(sem, "Summer")
-        # TARGET folder = the SAME teacher folder used for scans/results
-        teacher_root = self._build_scan_dir(teacher)
-        os.makedirs(teacher_root, exist_ok=True)
 
-        # TARGET filename & path
-        target_name = f"{teacher}, {ay}, {sem_label}.xlsx"
-        target_path = os.path.join(teacher_root, target_name)
+        # 🔎 Resolve teacher's department (fallback if missing)
+        dept = self._get_teacher_department(teacher) or "UnknownDept"
 
-        # Try controller-provided writers (write directly to target_path when possible)
+        # ✅ TARGET: Summaries/<Dept>/<AY>/<Sem>/<Teacher>/<Teacher>, <AY>, <Sem>.xlsx
+        base_root = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Summaries")
+
+        # light sanitizing for folder/file safety
+        def _safe(s: str) -> str:
+            return (s or "").replace("/", "-").replace("\\", "-").strip()
+
+        out_dir = os.path.join(base_root, _safe(dept), _safe(ay), _safe(sem), _safe(teacher))
+        os.makedirs(out_dir, exist_ok=True)
+
+        # Use the same filename style as manual export (no "Sem" word)
+        target_name = f"{teacher}, {ay}, {sem}.xlsx"
+        target_path = os.path.join(out_dir, _safe(target_name))
+
+        # Prefer controller-provided writers (write directly to target_path)
         try:
             if hasattr(self.summary, "save_summary_excel"):
-                self.summary.save_summary_excel(target_path, teacher, include_raters=("Student", "Peer", "Self", "Dean"))
+                self.summary.save_summary_excel(
+                    target_path, teacher, include_raters=("Student", "Peer", "Self", "Dean")
+                )
                 return
             if hasattr(self.summary, "export_summary_excel"):
-                self.summary.export_summary_excel(target_path, teacher, include_raters=("Student", "Peer", "Self", "Dean"))
+                self.summary.export_summary_excel(
+                    target_path, teacher, include_raters=("Student", "Peer", "Self", "Dean")
+                )
                 return
         except Exception as ex:
             print(f"⚠️ summary helper direct-write failed: {ex}")
@@ -714,13 +722,11 @@ class ScanPage:
         produced_path = None
         try:
             if hasattr(self.summary, "export_full_summary"):
-                # Many implementations produce a temp file based on template
                 produced_path = self.summary.export_full_summary("template.xlsx")
         except Exception as ex:
             print(f"⚠️ export_full_summary failed: {ex}")
             produced_path = None
 
-        # If we got a file from the helper, move/replace it to target_path
         if produced_path and os.path.exists(produced_path):
             try:
                 os.makedirs(os.path.dirname(target_path), exist_ok=True)
@@ -736,16 +742,14 @@ class ScanPage:
             except Exception as ex:
                 print(f"⚠️ Could not normalize exported excel: {ex}")
 
-        # Fallback: build a minimal workbook so we still produce the correct file in the correct place
+        # Fallback: minimal workbook so we still produce the correct file in the correct place
         from openpyxl import Workbook
-
         wb = Workbook()
         ws = wb.active
         ws.title = "Summary"
         ws.cell(row=1, column=1, value=f"Teacher: {teacher}")
         ws.cell(row=2, column=1, value=f"AY/Sem: {ay} / {sem_label}")
 
-        # dump current results minimally
         teacher_bucket = self.processed_results.get(teacher, {}) or {}
         row = 4
         for rater in ("Student", "Peer", "Self", "Dean"):
@@ -765,9 +769,6 @@ class ScanPage:
             row += 1
 
         wb.save(target_path)
-
-
-
 
     def save_csv(self):
         if not self.processed_results:
@@ -876,8 +877,6 @@ class ScanPage:
         # load the first image immediately
         self.display_image(values[0], self.teacher_var.get(), base_dir=self.current_scan_dir)
 
-
-
     def display_image(self, filename, teacher, base_dir=None):
         try:
             folder = base_dir or self.current_scan_dir or self._build_scan_dir(teacher)
@@ -896,34 +895,40 @@ class ScanPage:
             self.img_label.configure(image=None, text="Error loading image")
             messagebox.showerror("Image Error", str(e))
 
-
     # ---------------- OTHERS ---------------- #
   
     def set_controls_state(self, state="normal"):
         """Enable or disable all buttons/menus in the scan page."""
         widgets = [
-            self.process_button,
-            self.save_button,
-            self.teacher_dropdown,
-            self.document_listbox,
-            # add more if needed
+            getattr(self, "btn_scan", None),
+            getattr(self, "btn_check_existing", None),
+            getattr(self, "btn_clear_docs", None),
+            getattr(self, "teacher_dropdown", None),
+            getattr(self, "subject_dropdown", None),
+            getattr(self, "rater_dropdown", None),
+            getattr(self, "document_listbox", None),
         ]
         for w in widgets:
             try:
-                w.configure(state=state)
+                if w is not None:
+                    w.configure(state=state)
             except Exception:
                 pass
-            
+
     def _get_expected_total_for_teacher(self, teacher_full_name: str) -> int:
-        """Sum of expected_students across ALL teaching_assignments for the teacher."""
+        """Sum expected students across this term's teaching_loads for the teacher."""
         try:
+            ay, sem = self._infer_ay_and_sem_from_today()
             with db.connect() as conn:
                 row = conn.execute("""
-                    SELECT COALESCE(SUM(ta.expected_students), 0)
-                    FROM teaching_assignments ta
-                    JOIN faculty f ON f.id = ta.teacher_id
+                    SELECT COALESCE(SUM(tl.expected_students), 0)
+                    FROM teaching_loads tl
+                    JOIN faculty f ON f.id = tl.teacher_id
+                    JOIN curriculum_subjects cs ON cs.id = tl.curriculum_subject_id
                     WHERE f.full_name = ?
-                """, (teacher_full_name,)).fetchone()
+                    AND cs.academic_year = ?
+                    AND cs.semester = ?
+                """, (teacher_full_name, ay, sem)).fetchone()
             return int(row[0] or 0)
         except Exception:
             return 0
@@ -963,20 +968,139 @@ class ScanPage:
         return count
 
     def _refresh_teacher_progress(self):
-        """Recompute and update the progress bar + label for the selected teacher."""
-        teacher = self.teacher_var.get()
+        teacher = (self.teacher_var.get() or "").strip()
         if not teacher or teacher in ("Loading...", "No teachers found"):
             self.progress_bar.set(0)
             self.scan_info_label.configure(text="No teacher selected")
             return
 
-        total = self._get_expected_total_for_teacher(teacher)
-        completed = self._get_completed_student_scans_current_period(teacher)
+        subj_label = (self.subject_var.get() or "").strip()
+        subj_code  = self.subject_code_by_label.get(subj_label, "")
+        if not subj_code:
+            self.progress_bar.set(0)
+            self.scan_info_label.configure(text="Pick a subject for this teacher")
+            return
+
+        total = self._get_expected_total_for_teacher_subject(teacher, subj_code)
+        completed = self._get_completed_student_scans_current_period_subject(teacher, subj_code)
         remaining = max(total - completed, 0)
 
-        progress = (completed / total) if total > 0 else 0.0
-        self.progress_bar.set(progress)
-        # e.g., “12 / 30 completed • 18 remaining”
-        self.scan_info_label.configure(
-            text=f"{completed} / {total} completed • {remaining} remaining"
-        )
+        self.progress_bar.set((completed / total) if total > 0 else 0.0)
+        self.scan_info_label.configure(text=f"{completed} / {total} completed • {remaining} remaining")
+
+
+    def _on_teacher_change(self):
+        self._load_subjects_for_teacher(self.teacher_var.get())
+        self._refresh_teacher_progress()
+
+    def _load_subjects_for_teacher(self, teacher_full_name: str):
+        """Fill the Subject dropdown with this teacher's subjects this term."""
+        try:
+            ay, sem = self._infer_ay_and_sem_from_today()
+            with db.connect() as conn:
+                rows = conn.execute("""
+                    SELECT s.id, s.code, s.title
+                    FROM teaching_assignments ta
+                    JOIN subjects s ON s.id = ta.subject_id
+                    JOIN faculty  f ON f.id = ta.teacher_id
+                    WHERE f.full_name = ? AND ta.academic_year = ? AND ta.semester = ?
+                    GROUP BY s.id, s.code, s.title
+                    ORDER BY s.code
+                """, (teacher_full_name, ay, sem)).fetchall()
+
+            if not rows:
+                self.subject_dropdown.configure(values=["— No subjects this term —"], state="disabled")
+                self.subject_var.set("— No subjects this term —")
+                self.subject_label_to_id.clear()
+                self.subject_code_by_label.clear()
+                return
+
+            labels = []
+            self.subject_label_to_id.clear()
+            self.subject_code_by_label.clear()
+            for sid, code, title in rows:
+                label = f"{code} — {title}"
+                labels.append(label)
+                self.subject_label_to_id[label] = sid
+                self.subject_code_by_label[label] = code
+
+            self.subject_dropdown.configure(values=labels, state="normal")
+            self.subject_var.set(labels[0])
+
+        except Exception as e:
+            messagebox.showerror("DB Error", str(e))
+            self.subject_dropdown.configure(values=["— Error —"], state="disabled")
+            self.subject_var.set("— Error —")
+
+    def _meta_path(self, teacher_root: str) -> str:
+        return os.path.join(teacher_root, "scan_meta.json")
+
+    def _load_subject_meta(self, teacher_root: str) -> dict:
+        try:
+            p = self._meta_path(teacher_root)
+            if os.path.exists(p):
+                with open(p, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return {}
+
+    def _save_subject_meta(self, teacher_root: str, filename: str, subject_code: str):
+        try:
+            meta = self._load_subject_meta(teacher_root)
+            meta[filename] = subject_code or ""
+            with open(self._meta_path(teacher_root), "w", encoding="utf-8") as f:
+                json.dump(meta, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+ 
+    def _get_expected_total_for_teacher_subject(self, teacher_full_name: str, subject_code: str) -> int:
+        if not subject_code:
+            return 0
+        try:
+            ay, sem = self._infer_ay_and_sem_from_today()
+            with db.connect() as conn:
+                row = conn.execute("""
+                    SELECT COALESCE(SUM(ta.expected_students), 0)
+                    FROM teaching_assignments ta
+                    JOIN subjects s ON s.id = ta.subject_id
+                    JOIN faculty  f ON f.id = ta.teacher_id
+                    WHERE f.full_name = ? AND s.code = ? AND ta.academic_year = ? AND ta.semester = ?
+                """, (teacher_full_name, subject_code, ay, sem)).fetchone()
+            return int(row[0] or 0)
+        except Exception:
+            return 0
+
+    def _get_completed_student_scans_current_period_subject(self, teacher_full_name: str, subject_code: str) -> int:
+        """Count Student scans for this teacher in THIS AY/Sem that were tagged with subject_code."""
+        if not subject_code:
+            return 0
+
+        db_path = db.get_default_db_path()
+        base_dir = os.path.dirname(db_path)
+        pkl_path = os.path.join(base_dir, "results.pkl")
+        if not os.path.exists(pkl_path):
+            return 0
+
+        try:
+            with open(pkl_path, "rb") as f:
+                data = pickle.load(f)
+            results = data.get("results", {})
+        except Exception:
+            return 0
+
+        teacher_bucket = results.get(teacher_full_name, {})
+        student_list = teacher_bucket.get("Student", [])
+        if isinstance(teacher_bucket, list):
+            student_list = []
+
+        current_dir = self._build_scan_dir(teacher_full_name)
+        meta = self._load_subject_meta(current_dir)
+
+        count = 0
+        for fname, _payload in student_list:
+            if os.path.exists(os.path.join(current_dir, fname)) and meta.get(fname, "") == subject_code:
+                count += 1
+        return count
+       
+                

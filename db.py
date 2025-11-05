@@ -5,6 +5,8 @@ import shutil
 from datetime import datetime
 import json
 
+
+
 DB_FILENAME = "ter_db2.sqlite"
 PKL_FILENAME = "results.pkl"  
 
@@ -366,8 +368,33 @@ def migrate_to_current_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE teaching_assignments ADD COLUMN expected_students INTEGER DEFAULT 0")
     conn.commit()
     _ensure_activity_logs(conn)
-
-
+    _safe_ensure_curriculum_schema(conn)
+     # optional – idempotent
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS curriculum (
+          id INTEGER PRIMARY KEY,
+          program_id INTEGER NOT NULL,
+          academic_year TEXT NOT NULL,
+          semester TEXT NOT NULL CHECK (semester IN ('1st','2nd','Summer')),
+          UNIQUE (program_id, academic_year, semester),
+          FOREIGN KEY (program_id) REFERENCES programs(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS curriculum_subjects (
+          id INTEGER PRIMARY KEY,
+          curriculum_id INTEGER NOT NULL,
+          subject_id INTEGER NOT NULL,
+          UNIQUE (curriculum_id, subject_id),
+          FOREIGN KEY (curriculum_id) REFERENCES curriculum(id) ON DELETE CASCADE,
+          FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS ix_curriculum_prog_term
+          ON curriculum(program_id, academic_year, semester);
+        CREATE INDEX IF NOT EXISTS ix_currsubj_curriculum
+          ON curriculum_subjects(curriculum_id);
+        CREATE INDEX IF NOT EXISTS ix_currsubj_subject
+          ON curriculum_subjects(subject_id);
+    """)
+    conn.commit()
 
 
 def get_default_pkl_path() -> str:
@@ -405,3 +432,65 @@ def backup_all(backup_dir: Optional[str] = None) -> str:
     shutil.copy2(pkl_path, pkl_backup)
 
     return backup_dir
+  
+def _safe_ensure_curriculum_schema(conn: sqlite3.Connection) -> None:
+    
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS curriculum (
+            id INTEGER PRIMARY KEY,
+            program_id INTEGER NOT NULL,
+            academic_year TEXT NOT NULL,
+            semester TEXT NOT NULL CHECK (semester IN ('1st','2nd','Summer')),
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(program_id, academic_year, semester),
+            FOREIGN KEY (program_id) REFERENCES programs(id) ON DELETE CASCADE
+        )
+    """)
+
+    # curriculum_subjects — detect bad/old schema and repair
+    cols = _colnames(conn, "curriculum_subjects")
+    if not cols:
+        # brand-new: create correctly
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS curriculum_subjects (
+                id INTEGER PRIMARY KEY,
+                curriculum_id INTEGER NOT NULL,
+                subject_id INTEGER NOT NULL,
+                UNIQUE (curriculum_id, subject_id),
+                FOREIGN KEY (curriculum_id) REFERENCES curriculum(id) ON DELETE CASCADE,
+                FOREIGN KEY (subject_id)     REFERENCES subjects(id)     ON DELETE CASCADE
+            )
+        """)
+    else:
+        needed = {"id", "curriculum_id", "subject_id"}
+        if not needed.issubset(cols):
+            # rename old table → create correct one → migrate what we can → drop old
+            conn.execute("ALTER TABLE curriculum_subjects RENAME TO curriculum_subjects_old")
+            conn.execute("""
+                CREATE TABLE curriculum_subjects (
+                    id INTEGER PRIMARY KEY,
+                    curriculum_id INTEGER NOT NULL,
+                    subject_id INTEGER NOT NULL,
+                    UNIQUE (curriculum_id, subject_id),
+                    FOREIGN KEY (curriculum_id) REFERENCES curriculum(id) ON DELETE CASCADE,
+                    FOREIGN KEY (subject_id)     REFERENCES subjects(id)     ON DELETE CASCADE
+                )
+            """)
+            oldcols = _colnames(conn, "curriculum_subjects_old")
+            # best-effort copy if old had 'curriculum' and 'subject' column names
+            if {"curriculum", "subject"}.issubset(oldcols):
+                conn.execute("""
+                    INSERT OR IGNORE INTO curriculum_subjects (curriculum_id, subject_id)
+                    SELECT curriculum, subject FROM curriculum_subjects_old
+                """)
+            # if the old names were different, we skip migration (table was probably empty)
+            conn.execute("DROP TABLE curriculum_subjects_old")
+
+    # indexes (safe to repeat)
+    conn.execute("""CREATE INDEX IF NOT EXISTS ix_curriculum_prog_term
+                    ON curriculum(program_id, academic_year, semester)""")
+    conn.execute("""CREATE INDEX IF NOT EXISTS ix_currsubj_curriculum
+                    ON curriculum_subjects(curriculum_id)""")
+    conn.execute("""CREATE INDEX IF NOT EXISTS ix_currsubj_subject
+                    ON curriculum_subjects(subject_id)""")
+    conn.commit()

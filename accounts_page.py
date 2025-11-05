@@ -6,8 +6,13 @@ import datetime
 from db import backup_all
 import shutil
 import os
+# curriculum.py lives in the same folder as this file
+try:
+    from curriculum import CurriculumLoadMixin  # or CurriculumBuilder — see note below
+except Exception:
+    CurriculumLoadMixin = None  # we’ll show a friendly message if the module isn't available
 
-class AccountsDatabasePage:
+class AccountsDatabasePage(CurriculumLoadMixin):
     def __init__(self, master, ctx):
         self.master = master
         self.tab_buttons = {}
@@ -60,7 +65,7 @@ class AccountsDatabasePage:
         self.controls_frame.pack(fill="x", pady=(10, 0))
 
         # Tab buttons
-        for i, entity in enumerate(["Faculty", "Departments","Programs","Subjects", "Blocks", "Teaching Assignments"]):
+        for i, entity in enumerate(["Faculty", "Departments","Programs","Subjects", "Blocks", "Teaching Assignments", "Curriculum", 'Curriculum Table']):
             btn = CTkButton(
                 self.tab_frame, text=entity,
                 command=lambda e=entity: self.show_tab(e),
@@ -139,7 +144,9 @@ class AccountsDatabasePage:
             "Programs": self.show_programs_table,
             "Subjects": self.show_subjects_table,
             "Blocks": self.show_blocks_table,
-            "Teaching Assignments": self.show_teaching_assignments_table
+            "Teaching Assignments": self.show_teaching_assignments_table,
+            "Curriculum": self.show_curriculum_load_tab,
+            "Curriculum Table": self.show_curriculum_table
         }
 
         table_loaders[name](table_container, search_entry)
@@ -147,6 +154,21 @@ class AccountsDatabasePage:
         # Controls
         for w in self.controls_frame.winfo_children():
             w.destroy()
+        # hide controls for these tabs
+        if name in ("Curriculum", "Curriculum Table"):
+            return  # nothing else to add here
+
+        for label, color in [("Add","#691612"),("Edit","#BF3131"),("Delete","#B22222")]:
+            CTkButton(
+                self.controls_frame,
+                text=f"{label} {name[:0]}",
+                fg_color=color,
+                hover_color="#8B1D18",
+                text_color="#FFFFFF",
+                command=(lambda l=label: self._handle_control(name, l.lower()))
+            ).pack(side="left", padx=5)
+            
+            
         for label, color in [
             ("Add", "#691612"),    # Dark Crimson
             ("Edit", "#BF3131"),   # Crimson
@@ -549,6 +571,7 @@ class AccountsDatabasePage:
         load_data()
 
 
+    
     # ---------------- Delete ---------------- #
     def delete_selected(self):
         if not self.tree:
@@ -1555,4 +1578,97 @@ class AccountsDatabasePage:
         except Exception as e:
             messagebox.showerror("Restore Failed", str(e))
 
+    #curriculum helpers 
+    def show_curriculum_table(self, container, search_entry):
+        from curriculum import ensure_curriculum_tables
+        try:
+            ensure_curriculum_tables()
+        except Exception:
+            pass
+
+        frame = CTkFrame(container, fg_color="transparent")
+        frame.pack(fill="both", expand=True, padx=10, pady=10)
+        frame.grid_columnconfigure((0,1), weight=1)
+        frame.grid_rowconfigure(0, weight=1)
+
+        left = CTkFrame(frame, fg_color="transparent")
+        right = CTkFrame(frame, fg_color="#FFFFFF", corner_radius=10)
+        left.grid(row=0, column=0, sticky="nsew", padx=(0,8))
+        right.grid(row=0, column=1, sticky="nsew", padx=(8,0))
+
+        self._setup_treeview(
+            left,
+            columns=("Program","Academic Year","Semester","Subjects"),
+            headings=("Program","Academic Year","Semester","Subjects"),
+            col_widths=(150,150,100,100)
+        )
+
+        def load_data(term=None):
+            self.tree.delete(*self.tree.get_children())
+            where, params = [], []
+            base = """
+                SELECT c.id, p.code, c.academic_year, c.semester, COUNT(cs.subject_id)
+                FROM curriculum c
+                JOIN programs p ON p.id = c.program_id
+                LEFT JOIN curriculum_subjects cs ON cs.curriculum_id = c.id
+            """
+            if self._is_operator():
+                where.append("p.department_id=?")
+                params.append(self.ctx.department_id)
+            if term and term.strip():
+                like = f"%{term.strip()}%"
+                where.append("(p.code LIKE ? OR c.academic_year LIKE ? OR c.semester LIKE ?)")
+                params += [like, like, like]
+            if where:
+                base += " WHERE " + " AND ".join(where)
+            base += """
+                GROUP BY c.id, p.code, c.academic_year, c.semester
+                ORDER BY p.code, c.academic_year, c.semester
+            """
+            with db.connect() as conn:
+                for cid, prog, ay, sem, cnt in conn.execute(base, params).fetchall():
+                    self.tree.insert("", "end", iid=str(cid), values=(prog, ay, sem, cnt))
+
+        def show_subjects_for_curriculum(_evt=None):
+            for w in right.winfo_children():
+                w.destroy()
+            sel = self.tree.selection()
+            if not sel:
+                CTkLabel(right, text="Select a curriculum to view its subjects.",
+                        font=("Poppins", 13)).pack(pady=12)
+                return
+            cid = int(sel[0])
+            prog, ay, sem, _ = self.tree.item(sel[0], "values")
+
+            CTkLabel(right, text=f"{prog}  •  AY {ay}  •  {sem}",
+                    font=("Poppins", 16, "bold"), text_color="#691612")\
+                .pack(anchor="w", padx=14, pady=(14,8))
+
+            scroll = CTkScrollableFrame(right, fg_color="#FFFFFF")
+            scroll.pack(fill="both", expand=True, padx=14, pady=(0,14))
+
+            with db.connect() as conn:
+                rows = conn.execute("""
+                    SELECT s.code, s.title, s.year_level, s.units
+                    FROM curriculum_subjects cs
+                    JOIN subjects s ON s.id = cs.subject_id
+                    WHERE cs.curriculum_id = ?
+                    ORDER BY s.year_level, s.code
+                """, (cid,)).fetchall()
+
+            if not rows:
+                CTkLabel(scroll, text="No subjects found.", font=("Poppins",12)).pack(pady=10)
+            else:
+                cur_year = None
+                for code, title, year, units in rows:
+                    if year != cur_year:
+                        cur_year = year
+                        CTkLabel(scroll, text=f"Year {year}",
+                                font=("Poppins",13,"bold")).pack(anchor="w", padx=8, pady=(10,4))
+                    CTkLabel(scroll, text=f"• {code} — {title} ({units}u)")\
+                        .pack(anchor="w", padx=18, pady=1)
+
+        self.tree.bind("<<TreeviewSelect>>", show_subjects_for_curriculum)
+        search_entry.bind("<KeyRelease>", lambda e: load_data(search_entry.get()))
+        load_data()
 

@@ -174,11 +174,10 @@ class SummaryFormController:
 
     # ---------- Export (optional) ----------
     def export_full_summary(self, template_path="template.xlsx") -> Optional[str]:
-       
         if load_workbook is None:
             raise RuntimeError("openpyxl is required for export_full_summary.")
 
-        # AY & Sem
+        # Resolve AY & Sem
         sem = None
         ay = None
         if self.semester_var is not None:
@@ -197,7 +196,7 @@ class SummaryFormController:
         if not sem and not ay:
             ay, sem = infer_ay_and_sem_from_today()
 
-        # ensure rating period reflects
+        # Ensure Rating Period field reflects the computed values
         if "rating period" in self.entry_widgets:
             e = self.entry_widgets["rating period"]
             try:
@@ -206,27 +205,40 @@ class SummaryFormController:
             except Exception:
                 pass
 
+        # Load template sheets
         wb = load_workbook(template_path)
         ws_ti = wb["TI"]
         ws_ter = wb["TER"]
 
-        # Fill supporting sheets
+        # Write data into sheets
         self._write_student_scores(ws_ti)
         self._write_manual_results(ws_ter)
         self._write_peer_scores(ws_ti)
         self._write_self_scores(ws_ti)
         self._write_dean_scores(ws_ti)
 
-        base_folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Summaries")
-        os.makedirs(base_folder, exist_ok=True)
-
+        # ------- NEW: build nested save path under Summaries -------
         teacher_name = self.current_teacher or "Unknown Teacher"
+        dept_name = self.get_department_for_teacher(teacher_name) or "UnknownDept"
+
+        base_root = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Summaries")
+        # Clean pieces to be safe for folders
+        safe_dept = _safe_filename(dept_name)
+        safe_teacher = _safe_filename(teacher_name)
+        safe_ay = _safe_filename(ay)
+        safe_sem = _safe_filename(sem)
+
+        out_dir = os.path.join(base_root, safe_dept, safe_ay, safe_sem, safe_teacher)
+        os.makedirs(out_dir, exist_ok=True)
+
         file_title = f"{teacher_name}, {ay}, {sem}"
         filename = _safe_filename(file_title) + ".xlsx"
-        save_path = os.path.join(base_folder, filename)
+        save_path = os.path.join(out_dir, filename)
+        # -----------------------------------------------------------
 
         wb.save(save_path)
         return save_path
+
 
     # ---------- Internals ----------
     def _open_summary_popup(self, master, teacher_name: str):
