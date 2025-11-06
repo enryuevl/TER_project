@@ -158,15 +158,7 @@ class AccountsDatabasePage(CurriculumLoadMixin):
         if name in ("Curriculum", "Curriculum Table"):
             return  # nothing else to add here
 
-        for label, color in [("Add","#691612"),("Edit","#BF3131"),("Delete","#B22222")]:
-            CTkButton(
-                self.controls_frame,
-                text=f"{label} {name[:0]}",
-                fg_color=color,
-                hover_color="#8B1D18",
-                text_color="#FFFFFF",
-                command=(lambda l=label: self._handle_control(name, l.lower()))
-            ).pack(side="left", padx=5)
+        
             
             
         for label, color in [
