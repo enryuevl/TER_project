@@ -73,7 +73,7 @@ def find_unmatched_marks(img):
     sections = {
         "Section 1": resized[461:613, 579:790],
         "Section 2": resized[631:784, 579:790],
-        "Section 3": resized[800:964, 579:790],
+        "Section 3": resized[802:964, 579:790],
         "Section 4": resized[981:1146, 579:790],
     }
 
@@ -130,7 +130,7 @@ def show_debug_overlays(full_img, window_prefix="Page"):
     sections = {
         "Section 1": resized[461:613, 579:790],
         "Section 2": resized[631:784, 579:790],
-        "Section 3": resized[800:964, 579:790],
+        "Section 3": resized[802:964, 579:790],
         "Section 4": resized[981:1146, 579:790],
     }
 

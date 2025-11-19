@@ -229,7 +229,7 @@ class ResultsPage:
         summary_btn.pack(side="left", padx=5)
 
         # Export Summary (module + log)
-        export_btn = CTkButton(
+        '''export_btn = CTkButton(
             control_frame,
             text="Export Summary",
             command=lambda: self._export_summary_via_module(),
@@ -239,7 +239,7 @@ class ResultsPage:
             font=("Poppins", 14, "bold"),
             corner_radius=5
         )
-        export_btn.pack(side="left", padx=5)
+        export_btn.pack(side="left", padx=5)'''
 
         # Archive
         archive_btn = CTkButton(

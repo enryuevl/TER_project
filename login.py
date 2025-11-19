@@ -18,10 +18,8 @@ BORDER = "#E5E5E5"
 # ── Roles shown in UI → saved to DB in lowercase
 ROLES_UI = ["Admin", "Dean", "Operator"]
 ROLE_MAP = {"Admin": "admin", "Dean": "dean", "Operator": "operator"}
-
-# ── DB location (adjust if your db.py uses a different path)
-DB_PATH = "C:/Users/paula/Documents/MyWork/ter_db2.sqlite"
-
+documents_path = os.path.join(os.environ['USERPROFILE'], 'Documents', 'MyWork')
+DB_PATH = os.path.join(documents_path, 'ter_db2.sqlite')
 # ── Password hashing helpers
 try:
     

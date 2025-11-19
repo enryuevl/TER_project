@@ -65,7 +65,7 @@ class AccountsDatabasePage(CurriculumLoadMixin):
         self.controls_frame.pack(fill="x", pady=(10, 0))
 
         # Tab buttons
-        for i, entity in enumerate(["Faculty", "Departments","Programs","Subjects", "Blocks", "Teaching Assignments", "Curriculum", 'Curriculum Table']):
+        for i, entity in enumerate(["Faculty", "Departments","Programs","Subjects", "Blocks", "Teaching Assignments", "Curriculum"]):
             btn = CTkButton(
                 self.tab_frame, text=entity,
                 command=lambda e=entity: self.show_tab(e),
