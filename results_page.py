@@ -36,9 +36,17 @@ class ResultsPage:
         self.container = CTkFrame(self.master, fg_color="transparent")
         self.container.pack(fill="both", expand=True, padx=20, pady=20)
 
-        CTkLabel(self.container, text="Evaluation Results",
-                 font=("Poppins", 24, "bold"), text_color="#691612").pack(pady=(0, 20))
+            # --- Page Title Bar (same style as Data Management Panel) ---
+        title_bar = CTkFrame(self.container, fg_color="#BF3131", height=70, corner_radius=10)
+        title_bar.pack(fill="x", padx=10, pady=(0, 12))
 
+        CTkLabel(
+            title_bar,
+            text="Evaluation Results",          # <- you can change this text if you want
+            font=("Poppins", 18, "bold"),
+            text_color="#FFFFFF"
+        ).pack(side="left", padx=20, pady=12)
+    
         # Tabs: teachers
         self.tab_frame = CTkFrame(self.container, fg_color="transparent")
         self.tab_frame.pack(fill="x", pady=(0, 10))
