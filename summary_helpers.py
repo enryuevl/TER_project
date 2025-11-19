@@ -280,7 +280,7 @@ class SummaryFormController:
             if key:
                 self.entry_widgets[key] = {"rating": rating_entry, "equivalent": eq_entry, "point": point_entry}
 
-        def add_behavior_row(parent, row_idx, label, percent="", key=None):
+        def add_behavior_row(parent, row_idx, label, percent="", key=None, include_in_calc=True):
             ctk.CTkLabel(parent, text=label, font=("Poppins", 12),
                          text_color="#1F2937", anchor="w").grid(row=row_idx, column=0, sticky="w", padx=5, pady=2)
             eq_entry = ctk.CTkEntry(parent, width=150, font=("Poppins", 12))
@@ -291,14 +291,32 @@ class SummaryFormController:
             point_entry.grid(row=row_idx, column=4, padx=5, pady=2)
 
             if key:
-                self.entry_widgets[key] = {"equivalent": eq_entry, "point": point_entry, "weight": float(percent.strip('%')) if percent else 0.0}
+                weight = float(percent.strip('%')) if percent else 0.0
+                # store whether this row should participate in the overall calculation
+                self.entry_widgets[key] = {
+                    "equivalent": eq_entry,
+                    "point": point_entry,
+                    "weight": weight,
+                    "include": bool(include_in_calc),
+                }
+
+                # If this is not included, disable the inputs so the user sees it
+                if not include_in_calc:
+                    eq_entry.configure(state="disabled")
+                    point_entry.configure(state="disabled")
 
                 def update_point(_event=None, entry_key=key):
+                    # If this row is not included in the calculations, keep point blank
+                    if not self.entry_widgets[entry_key].get("include", True):
+                        point_entry.delete(0, "end")
+                        self._update_overall_point_score()
+                        return
+
                     val = eq_entry.get().strip()
                     try:
                         num = float(val)
-                        weight = self.entry_widgets[entry_key]["weight"] / 100.0
-                        point = num * weight
+                        weight_local = self.entry_widgets[entry_key]["weight"] / 100.0
+                        point = num * weight_local
                         point_entry.delete(0, "end")
                         point_entry.insert(0, f"{point:.2f}")
                     except ValueError:
@@ -306,6 +324,7 @@ class SummaryFormController:
                     self._update_overall_point_score()
 
                 eq_entry.bind("<KeyRelease>", update_point)
+
 
         # Header
         ctk.CTkLabel(scroll, text="TEACHING EFFICIENCY RATING (TER) SCALE FORM",
@@ -339,6 +358,14 @@ class SummaryFormController:
         add_behavior_row(perf, 6, "2. Research",   "5%", key="research")
         add_behavior_row(perf, 7, "3. Extension",  "5%", key="extension")
         add_behavior_row(perf, 8, "4. Production", "5%", key="production")
+        
+        # Determine if the current teacher is a dean (for behavior rows)
+        is_dean = False
+        try:
+            is_dean = self._is_teacher_dean(teacher_name)
+        except Exception:
+            is_dean = False
+
 
         # Behavior
         beh = ctk.CTkFrame(scroll, fg_color="transparent")
@@ -352,8 +379,10 @@ class SummaryFormController:
         add_behavior_row(beh, 3, "2. Human Relations",               "7.5%", key="human_relations")
         add_behavior_row(beh, 4, "3. Punctuality and Attendance",    "7.5%", key="punctuality")
         add_behavior_row(beh, 5, "4. Initiative",                    "7.5%", key="initiative")
-        add_behavior_row(beh, 6, "5. Leadership (Supervisors only)", "5%",   key="leadership")
-        add_behavior_row(beh, 7, "6. Stress Tolerance (Supervisors only)","5%", key="stress_tolerance")
+        # ⬇these two now depend on is_dean
+        add_behavior_row(beh, 6, "5. Leadership (Supervisors only)", "5%",   key="leadership",        include_in_calc=is_dean)
+        add_behavior_row(beh, 7, "6. Stress Tolerance (Supervisors only)", "5%", key="stress_tolerance", include_in_calc=is_dean)
+
 
         # Plus Factor
         plus = ctk.CTkFrame(scroll, fg_color="transparent")
@@ -441,6 +470,9 @@ class SummaryFormController:
         total = 0.0
         for key, widgets in self.entry_widgets.items():
             if isinstance(widgets, dict) and "point" in widgets:
+                # skip rows explicitly marked as not included in calculation
+                if widgets.get("include") is False:
+                    continue
                 try:
                     total += float(widgets["point"].get().strip() or 0)
                 except Exception:
@@ -574,3 +606,22 @@ class SummaryFormController:
                 excel_row = row_map.get(rownum)
                 if excel_row:
                     ws.cell(row=excel_row, column=col, value=score)
+
+    # -----------------other helpers-------------------------
+    def _is_teacher_dean(self, teacher_name: str) -> bool:
+        """Return True if the given teacher is set as a department dean."""
+        if not self.db or not teacher_name:
+            return False
+        try:
+            with self.db.connect() as conn:
+                row = conn.execute("""
+                    SELECT 1
+                    FROM departments d
+                    JOIN faculty f ON f.id = d.dean_id
+                    WHERE f.full_name = ?
+                """, (teacher_name,)).fetchone()
+            return row is not None
+        except Exception:
+            return False
+
+    
