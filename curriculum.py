@@ -22,7 +22,7 @@ class CurriculumPage:
         for w in self.master.winfo_children():
             w.destroy()
 
-        # 🔴 Theme ttk Treeviews (avoid blue highlight)
+
         style = ttk.Style()
         style.theme_use("default")
         style.configure(
@@ -47,14 +47,6 @@ class CurriculumPage:
 
         self.container = CTkFrame(self.master, fg_color="transparent")
         self.container.pack(fill="both", expand=True, padx=20, pady=20)
-
-        # Title bar (like other pages)
-        title_bar = CTkFrame(self.container, fg_color="#BF3131", height=70, corner_radius=10)
-        title_bar.pack(fill="x", padx=10, pady=(0, 12))
-        CTkLabel(
-            title_bar, text="Curriculum Management",
-            font=("Poppins", 18, "bold"), text_color="#FFFFFF"
-        ).pack(side="left", padx=20, pady=12)
 
         # Top buttons: Curriculums | Add | Remove
         top_bar = CTkFrame(self.container, fg_color="transparent")
