@@ -6,13 +6,15 @@ import datetime
 from db import backup_all
 import shutil
 import os
-# curriculum.py lives in the same folder as this file
-try:
-    from curriculum import CurriculumLoadMixin  # or CurriculumBuilder — see note below
-except Exception:
-    CurriculumLoadMixin = None  # we’ll show a friendly message if the module isn't available
 
-class AccountsDatabasePage(CurriculumLoadMixin):
+# curriculum_page lives in the same folder as this file
+try:
+    from curriculum import CurriculumPage
+except Exception:
+    CurriculumPage = None
+
+
+class AccountsDatabasePage:
     def __init__(self, master, ctx):
         self.master = master
         self.tab_buttons = {}
@@ -145,8 +147,8 @@ class AccountsDatabasePage(CurriculumLoadMixin):
             "Subjects": self.show_subjects_table,
             "Blocks": self.show_blocks_table,
             "Teaching Assignments": self.show_teaching_assignments_table,
-            "Curriculum": self.show_curriculum_load_tab,
-            "Curriculum Table": self.show_curriculum_table
+            "Curriculum": self.show_curriculum_tab,
+            
         }
 
         table_loaders[name](table_container, search_entry)
@@ -704,6 +706,7 @@ class AccountsDatabasePage(CurriculumLoadMixin):
         dropdown_text_color="#1F2937",# Dark gray dropdown text
         dropdown_hover_color="#BF3131" 
     )
+   
     def build_faculty_form(self, parent, mode):
         CTkLabel(parent, text="Faculty Form", font=("Arial", 18, "bold"),
                 text_color="#691612").pack(pady=10)
@@ -1196,39 +1199,70 @@ class AccountsDatabasePage(CurriculumLoadMixin):
                 subject_menu.configure(state="normal")
 
         def load_all_subjects():
-            """Populate with all subjects (used when 'Merged' is selected)."""
+            """
+            Show all subjects that belong to any ACTIVE curriculum
+            but still only active subjects can be assigned
+            """
             opts, smap = [], {}
             with db.connect() as conn:
-                for sid, label in conn.execute(
-                    "SELECT id, code || ' - ' || title FROM subjects ORDER BY code"
-                ):
+                for sid, label in conn.execute("""
+                    SELECT DISTINCT s.id, s.code || ' - ' || s.title
+                    FROM subjects s
+                    JOIN curriculum_subjects cs ON cs.subject_id = s.id
+                    JOIN curricula c ON c.id = cs.curriculum_id
+                    WHERE c.is_active = 1
+                    ORDER BY s.code
+                """):
                     opts.append(label); smap[label] = sid
-            set_subject_menu(opts, smap, "— No subjects (DB empty) —")
+
+            set_subject_menu(opts, smap, "— No subjects in any active curriculum —")
+
 
         def load_subjects_for_block_label(blabel: str):
-            """Filter subjects by the chosen block's program/year/semester."""
+            """Filter subjects by the chosen block AND by the active curriculum of that program."""
             bid = block_map.get(blabel)
             if not bid:
                 set_subject_menu([], {}, "— Invalid block —")
                 return
+
             with db.connect() as conn:
-                # get the block's program/year/sem to filter subjects
+                # Get block’s program/year/sem
                 prow = conn.execute("""
                     SELECT program_id, year_level, semester
                     FROM blocks WHERE id=?
                 """, (bid,)).fetchone()
                 if not prow:
-                    set_subject_menu([], {}, "— Block not found —"); return
+                    set_subject_menu([], {}, "— Block not found —")
+                    return
+
                 program_id, year_level, sem = prow
+
+                # Find the active curriculum for this program
+                row = conn.execute("""
+                    SELECT id FROM curricula
+                    WHERE program_id=? AND is_active=1
+                """, (program_id,)).fetchone()
+                if not row:
+                    # No active curriculum → no subjects available
+                    set_subject_menu([], {}, "— No active curriculum for this program —")
+                    return
+                curr_id = row[0]
+
                 opts, smap = [], {}
                 for sid, label in conn.execute("""
-                    SELECT id, code || ' - ' || title
-                    FROM subjects
-                    WHERE program_id=? AND year_level=? AND semester=?
-                    ORDER BY code
-                """, (program_id, year_level, sem)):
+                    SELECT s.id, s.code || ' - ' || s.title
+                    FROM subjects s
+                    JOIN curriculum_subjects cs ON cs.subject_id = s.id
+                    WHERE cs.curriculum_id = ?
+                    AND s.program_id     = ?
+                    AND s.year_level     = ?
+                    AND s.semester       = ?
+                    ORDER BY s.code
+                """, (curr_id, program_id, year_level, sem)):
                     opts.append(label); smap[label] = sid
-            set_subject_menu(opts, smap, "— No subjects for this block —")
+
+            set_subject_menu(opts, smap, "— No subjects in active curriculum for this block —")
+
 
         # react to block selection to populate subjects
         def on_block_change(*_):
@@ -1571,96 +1605,22 @@ class AccountsDatabasePage(CurriculumLoadMixin):
             messagebox.showerror("Restore Failed", str(e))
 
     #curriculum helpers 
-    def show_curriculum_table(self, container, search_entry):
-        from curriculum import ensure_curriculum_tables
+    def show_curriculum_tab(self, container, search_entry):
+        
         try:
-            ensure_curriculum_tables()
+            search_entry.delete(0, "end")
         except Exception:
             pass
 
-        frame = CTkFrame(container, fg_color="transparent")
-        frame.pack(fill="both", expand=True, padx=10, pady=10)
-        frame.grid_columnconfigure((0,1), weight=1)
-        frame.grid_rowconfigure(0, weight=1)
+        if CurriculumPage is None:
+            CTkLabel(
+                container,
+                text="Curriculum module not available.\n"
+                    "Make sure curriculum_page.py is in the same folder.",
+                font=("Poppins", 14),
+                text_color="#B22222"
+            ).pack(pady=20)
+            return
 
-        left = CTkFrame(frame, fg_color="transparent")
-        right = CTkFrame(frame, fg_color="#FFFFFF", corner_radius=10)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0,8))
-        right.grid(row=0, column=1, sticky="nsew", padx=(8,0))
-
-        self._setup_treeview(
-            left,
-            columns=("Program","Academic Year","Semester","Subjects"),
-            headings=("Program","Academic Year","Semester","Subjects"),
-            col_widths=(150,150,100,100)
-        )
-
-        def load_data(term=None):
-            self.tree.delete(*self.tree.get_children())
-            where, params = [], []
-            base = """
-                SELECT c.id, p.code, c.academic_year, c.semester, COUNT(cs.subject_id)
-                FROM curriculum c
-                JOIN programs p ON p.id = c.program_id
-                LEFT JOIN curriculum_subjects cs ON cs.curriculum_id = c.id
-            """
-            if self._is_operator():
-                where.append("p.department_id=?")
-                params.append(self.ctx.department_id)
-            if term and term.strip():
-                like = f"%{term.strip()}%"
-                where.append("(p.code LIKE ? OR c.academic_year LIKE ? OR c.semester LIKE ?)")
-                params += [like, like, like]
-            if where:
-                base += " WHERE " + " AND ".join(where)
-            base += """
-                GROUP BY c.id, p.code, c.academic_year, c.semester
-                ORDER BY p.code, c.academic_year, c.semester
-            """
-            with db.connect() as conn:
-                for cid, prog, ay, sem, cnt in conn.execute(base, params).fetchall():
-                    self.tree.insert("", "end", iid=str(cid), values=(prog, ay, sem, cnt))
-
-        def show_subjects_for_curriculum(_evt=None):
-            for w in right.winfo_children():
-                w.destroy()
-            sel = self.tree.selection()
-            if not sel:
-                CTkLabel(right, text="Select a curriculum to view its subjects.",
-                        font=("Poppins", 13)).pack(pady=12)
-                return
-            cid = int(sel[0])
-            prog, ay, sem, _ = self.tree.item(sel[0], "values")
-
-            CTkLabel(right, text=f"{prog}  •  AY {ay}  •  {sem}",
-                    font=("Poppins", 16, "bold"), text_color="#691612")\
-                .pack(anchor="w", padx=14, pady=(14,8))
-
-            scroll = CTkScrollableFrame(right, fg_color="#FFFFFF")
-            scroll.pack(fill="both", expand=True, padx=14, pady=(0,14))
-
-            with db.connect() as conn:
-                rows = conn.execute("""
-                    SELECT s.code, s.title, s.year_level, s.units
-                    FROM curriculum_subjects cs
-                    JOIN subjects s ON s.id = cs.subject_id
-                    WHERE cs.curriculum_id = ?
-                    ORDER BY s.year_level, s.code
-                """, (cid,)).fetchall()
-
-            if not rows:
-                CTkLabel(scroll, text="No subjects found.", font=("Poppins",12)).pack(pady=10)
-            else:
-                cur_year = None
-                for code, title, year, units in rows:
-                    if year != cur_year:
-                        cur_year = year
-                        CTkLabel(scroll, text=f"Year {year}",
-                                font=("Poppins",13,"bold")).pack(anchor="w", padx=8, pady=(10,4))
-                    CTkLabel(scroll, text=f"• {code} — {title} ({units}u)")\
-                        .pack(anchor="w", padx=18, pady=1)
-
-        self.tree.bind("<<TreeviewSelect>>", show_subjects_for_curriculum)
-        search_entry.bind("<KeyRelease>", lambda e: load_data(search_entry.get()))
-        load_data()
-
+        # Keep a reference so it's not garbage-collected
+        self.curriculum_page = CurriculumPage(container, self.ctx)
