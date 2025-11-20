@@ -21,7 +21,8 @@ class CurriculumPage:
     def _build_ui(self):
         for w in self.master.winfo_children():
             w.destroy()
-            
+
+        # 🔴 Theme ttk Treeviews (avoid blue highlight)
         style = ttk.Style()
         style.theme_use("default")
         style.configure(
@@ -47,6 +48,14 @@ class CurriculumPage:
         self.container = CTkFrame(self.master, fg_color="transparent")
         self.container.pack(fill="both", expand=True, padx=20, pady=20)
 
+        # Title bar (like other pages)
+        title_bar = CTkFrame(self.container, fg_color="#BF3131", height=70, corner_radius=10)
+        title_bar.pack(fill="x", padx=10, pady=(0, 12))
+        CTkLabel(
+            title_bar, text="Curriculum Management",
+            font=("Poppins", 18, "bold"), text_color="#FFFFFF"
+        ).pack(side="left", padx=20, pady=12)
+
         # Top buttons: Curriculums | Add | Remove
         top_bar = CTkFrame(self.container, fg_color="transparent")
         top_bar.pack(fill="x", padx=10, pady=(0, 8))
@@ -54,13 +63,13 @@ class CurriculumPage:
         CTkButton(
             top_bar, text="Curriculums", state="disabled",
             fg_color="#691612", text_color="#FFFFFF",
-            hover_color="#691612",   # keep same, since disabled
-            ).pack(side="left", padx=(0, 8))
+            hover_color="#691612",  # same color, since disabled
+        ).pack(side="left", padx=(0, 8))
 
         CTkButton(
             top_bar, text="Add", width=90,
             fg_color="#BF3131", text_color="#FFFFFF",
-            hover_color="#8B1D18",   # 🔴 your hover red
+            hover_color="#8B1D18",
             command=self._open_add_curriculum_dialog
         ).pack(side="left", padx=4)
 
@@ -71,13 +80,13 @@ class CurriculumPage:
             command=self._delete_selected_curriculum
         ).pack(side="left", padx=4)
 
-
         # Main split: left list of curricula, right subjects
         main = CTkFrame(self.container, fg_color="#FFFFFF", corner_radius=10)
         main.pack(fill="both", expand=True, padx=10, pady=(0, 10))
         main.grid_columnconfigure(0, weight=0, minsize=260)
         main.grid_columnconfigure(1, weight=1)
         main.grid_rowconfigure(0, weight=1)
+        main.grid_rowconfigure(1, weight=0)
 
         # ---- Left: list of curricula ----
         left = CTkFrame(main, fg_color="#F8F9FA", corner_radius=10)
@@ -125,8 +134,8 @@ class CurriculumPage:
         self.subj_tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
         # ---- Bottom buttons: add/remove subjects, set active ----
-        bottom = CTkFrame(self.container, fg_color="transparent")
-        bottom.pack(fill="x", padx=10, pady=(4, 0))
+        bottom = CTkFrame(main, fg_color="transparent")
+        bottom.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
 
         CTkButton(
             bottom, text="Add Subjects",
@@ -148,7 +157,6 @@ class CurriculumPage:
             hover_color="#8B1D18",
             command=self._set_curriculum_active
         ).pack(side="left", padx=5, pady=5)
-
 
     # ---------- load data ----------
     def _load_curricula(self):
@@ -173,7 +181,7 @@ class CurriculumPage:
                 self.curr_tree.insert(
                     "", "end", iid=str(cid),
                     values=(name, pcode, "Yes" if active else ""),
-                    tags=(tag,)
+                    tags=(tag,),
                 )
         # remember styles if desired
         self.current_curriculum_id = None
@@ -237,65 +245,115 @@ class CurriculumPage:
         win.geometry("700x520")
         win.grab_set()
 
-        # header
-        CTkLabel(win, text="Select Subjects to be added to the curriculum",
-                 font=("Poppins", 14, "bold"), text_color="#691612")\
-            .pack(pady=(10, 4))
+        # Header text
+        CTkLabel(
+            win,
+            text="Select Subjects to be added to the curriculum",
+            font=("Poppins", 14, "bold"),
+            text_color="#691612",
+        ).pack(pady=(10, 4))
 
-        # show curriculum name
+        # Show selected curriculum name
         with db.connect() as conn:
-            row = conn.execute("SELECT name FROM curricula WHERE id=?",
-                               (self.current_curriculum_id,)).fetchone()
-        CTkLabel(win, text=row[0] if row else "",
-                 font=("Poppins", 12), text_color="#111827")\
-            .pack(pady=(0, 6))
+            row = conn.execute(
+                "SELECT name FROM curricula WHERE id=?",
+                (self.current_curriculum_id,),
+            ).fetchone()
 
-        # scrollable checklist
+        CTkLabel(
+            win,
+            text=row[0] if row else "",
+            font=("Poppins", 12),
+            text_color="#111827",
+        ).pack(pady=(0, 6))
+
+        # Scrollable checklist
         scroll = CTkScrollableFrame(win, fg_color="#FFFFFF")
         scroll.pack(fill="both", expand=True, padx=15, pady=(0, 10))
 
-        # load all subjects of this program, mark those already in curriculum
-        selected_ids = set()
+        # Load subjects of this program + currently selected ones
         with db.connect() as conn:
-            # current links
+            # already linked subject ids
             rows = conn.execute(
                 "SELECT subject_id FROM curriculum_subjects WHERE curriculum_id=?",
-                (self.current_curriculum_id,)
+                (self.current_curriculum_id,),
             ).fetchall()
             selected_ids = {r[0] for r in rows}
 
-            subjects = conn.execute("""
+            subjects = conn.execute(
+                """
                 SELECT id, code, title, year_level, semester
                 FROM subjects
-                WHERE program_id=?
+                WHERE program_id = ?
                 ORDER BY year_level, semester, code
-            """, (self.current_program_id,)).fetchall()
+                """,
+                (self.current_program_id,),
+            ).fetchall()
 
-        self._subject_vars = {}   # subject_id -> IntVar
+        # ----- group subjects by (year_level, semester) -----
+        YEAR_NAMES = {
+            1: "First Year",
+            2: "Second Year",
+            3: "Third Year",
+            4: "Fourth Year",
+        }
+        SEM_NAMES = {
+            "1st": "First Semester",
+            "2nd": "Second Semester",
+            "Summer": "Summer Term",
+        }
+        SEM_ORDER = {"1st": 1, "2nd": 2, "Summer": 3}
 
+        groups = {}  # (year, sem) -> [(id, code, title), ...]
         for sid, code, title, year, sem in subjects:
-            var = IntVar(value=1 if sid in selected_ids else 0)
-            self._subject_vars[sid] = var
-            text = f"[Y{year} {sem}] {code} - {title}"
-            CTkCheckBox(
-            scroll, text=text, variable=var,
-            font=("Poppins", 12),
-            fg_color="#BF3131",
-            hover_color="#8B1D18",
-            border_color="#691612",
-            checkmark_color="#FFFFFF",
-            ).pack(anchor="w", padx=10, pady=2)
+            key = (int(year), sem)
+            groups.setdefault(key, []).append((sid, code, title))
 
-        # bottom buttons inside popup
+        # mapping subject_id -> IntVar
+        self._subject_vars = {}
+
+        # Render one frame per (year, semester)
+        for (year, sem) in sorted(groups.keys(), key=lambda k: (k[0], SEM_ORDER.get(k[1], 99))):
+            pretty = f"{YEAR_NAMES.get(year, f'Year {year}')} – {SEM_NAMES.get(sem, sem)}"
+
+            section = CTkFrame(scroll, fg_color="#F8F9FA", corner_radius=8)
+            section.pack(fill="x", padx=5, pady=5)
+
+            CTkLabel(
+                section,
+                text=pretty,
+                font=("Poppins", 13, "bold"),
+                text_color="#691612",
+            ).pack(anchor="w", padx=10, pady=(6, 2))
+
+            for sid, code, title in groups[(year, sem)]:
+                var = IntVar(value=1 if sid in selected_ids else 0)
+                self._subject_vars[sid] = var
+
+                text = f"{code} – {title}"
+                CTkCheckBox(
+                    section,
+                    text=text,
+                    variable=var,
+                    font=("Poppins", 12),
+                    fg_color="#BF3131",
+                    hover_color="#8B1D18",
+                    border_color="#691612",
+                    checkmark_color="#FFFFFF",
+                ).pack(anchor="w", padx=20, pady=2)
+
+        # ----- bottom buttons -----
         btn_row = CTkFrame(win, fg_color="transparent")
         btn_row.pack(fill="x", pady=8)
 
         CTkButton(
-            btn_row, text="Finish",
-            fg_color="#691612", text_color="#FFFFFF",
+            btn_row,
+            text="Add new subject",
+            fg_color="#BF3131",
+            text_color="#FFFFFF",
             hover_color="#8B1D18",
-            command=finish
-            ).pack(side="right", padx=10)
+            command=lambda: self._open_add_subject(win),
+        ).pack(side="left", padx=10)
 
         def finish():
             self._save_subject_selection()
@@ -303,41 +361,79 @@ class CurriculumPage:
             self._load_curriculum_subjects()
 
         CTkButton(
-            btn_row, text="Finish",
-            fg_color="#691612", text_color="#FFFFFF",
+            btn_row,
+            text="Finish",
+            fg_color="#691612",
+            text_color="#FFFFFF",
             hover_color="#8B1D18",
-            command=finish
-            ).pack(side="right", padx=10)
+            command=finish,
+        ).pack(side="right", padx=10)
 
     def _save_subject_selection(self):
+        if not hasattr(self, "_subject_vars"):
+            return
+
+        # IDs of subjects whose checkbox is ON
         chosen = {sid for sid, var in self._subject_vars.items() if var.get() == 1}
+
         with db.connect() as conn:
-            # existing links
-            rows = conn.execute(
+            # 1) make sure the curriculum still exists
+            cur_exists = conn.execute(
+                "SELECT 1 FROM curricula WHERE id=?",
+                (self.current_curriculum_id,),
+            ).fetchone()
+            if not cur_exists:
+                messagebox.showerror(
+                    "Save failed",
+                    "The selected curriculum no longer exists. Please refresh the page.",
+                )
+                return
+
+            # 2) existing links for this curriculum
+            existing_rows = conn.execute(
                 "SELECT subject_id FROM curriculum_subjects WHERE curriculum_id=?",
-                (self.current_curriculum_id,)
+                (self.current_curriculum_id,),
             ).fetchall()
-            existing = {r[0] for r in rows}
+            existing = {r[0] for r in existing_rows}
+
+            # 3) validate that all chosen subject IDs still exist
+            if chosen:
+                placeholders = ",".join("?" * len(chosen))
+                valid_rows = conn.execute(
+                    f"SELECT id FROM subjects WHERE id IN ({placeholders})",
+                    tuple(chosen),
+                ).fetchall()
+                valid_ids = {r[0] for r in valid_rows}
+            else:
+                valid_ids = set()
+
+            invalid = chosen - valid_ids
+            if invalid:
+                messagebox.showwarning(
+                    "Some subjects skipped",
+                    "Some selected subjects no longer exist in the Subjects table. "
+                    "They were skipped when saving.",
+                )
+                chosen = valid_ids
 
             to_add = chosen - existing
             to_remove = existing - chosen
 
+            # 4) apply changes in a single transaction
             for sid in to_add:
                 conn.execute(
                     "INSERT OR IGNORE INTO curriculum_subjects (curriculum_id, subject_id) "
                     "VALUES (?, ?)",
-                    (self.current_curriculum_id, sid)
+                    (self.current_curriculum_id, sid),
                 )
 
-            if to_remove:
+            for sid in to_remove:
                 conn.execute(
-                    "DELETE FROM curriculum_subjects "
-                    "WHERE curriculum_id=? AND subject_id IN (%s)" %
-                    ",".join("?" * len(to_remove)),
-                    (self.current_curriculum_id, *to_remove)
+                    "DELETE FROM curriculum_subjects WHERE curriculum_id=? AND subject_id=?",
+                    (self.current_curriculum_id, sid),
                 )
-            conn.commit()
 
+            conn.commit()
 
     def _open_add_subject(self, parent):
         """Small dialog from the picker to add a brand-new subject for this program."""
@@ -362,17 +458,33 @@ class CurriculumPage:
         year_var = StringVar(value="1")
         sem_var = StringVar(value="1st")
         CTkLabel(win, text="Year level").pack(anchor="w", padx=20, pady=(6, 0))
-        year_menu = CTkOptionMenu(win, variable=year_var,
-                                  values=["1", "2", "3", "4"],
-                                  fg_color="#BF3131", button_color="#691612",
-                                  text_color="#FFFFFF")
+        year_menu = CTkOptionMenu(
+            win,
+            variable=year_var,
+            values=["1", "2", "3", "4"],
+            fg_color="#BF3131",
+            button_color="#691612",
+            button_hover_color="#8B1D18",
+            text_color="#FFFFFF",
+            dropdown_fg_color="#FFFFFF",
+            dropdown_hover_color="#F3D0D0",
+            dropdown_text_color="#111827",
+        )
         year_menu.pack(fill="x", padx=20, pady=2)
 
         CTkLabel(win, text="Semester").pack(anchor="w", padx=20, pady=(6, 0))
-        sem_menu = CTkOptionMenu(win, variable=sem_var,
-                                 values=["1st", "2nd", "Summer"],
-                                 fg_color="#BF3131", button_color="#691612",
-                                 text_color="#FFFFFF")
+        sem_menu = CTkOptionMenu(
+            win,
+            variable=sem_var,
+            values=["1st", "2nd", "Summer"],
+            fg_color="#BF3131",
+            button_color="#691612",
+            button_hover_color="#8B1D18",
+            text_color="#FFFFFF",
+            dropdown_fg_color="#FFFFFF",
+            dropdown_hover_color="#F3D0D0",
+            dropdown_text_color="#111827",
+        )
         sem_menu.pack(fill="x", padx=20, pady=2)
 
         def submit():
@@ -405,8 +517,10 @@ class CurriculumPage:
             self._open_subject_picker()
 
         CTkButton(
-            win, text="Add Subject", fg_color="#691612",
-            text_color="#FFFFFF", hover_color="#8B1D18",
+            win, text="Add Subject",
+            fg_color="#691612",
+            text_color="#FFFFFF",
+            hover_color="#8B1D18",
             command=submit
         ).pack(pady=12)
 
@@ -460,7 +574,7 @@ class CurriculumPage:
         win.geometry("360x260")
         win.grab_set()
 
-        CTkLabel(win, text="Add New Curriculum",
+        CTkLabel(win, text="Add new curriculum",
                 font=("Poppins", 16, "bold"), text_color="#691612")\
             .pack(pady=(15, 5))
 
@@ -475,7 +589,6 @@ class CurriculumPage:
                 params.append(self.ctx.department_id)
             sql += " ORDER BY code"
             for pid, code in conn.execute(sql, tuple(params)):
-                
                 options.append(code)
                 prog_map[code] = pid
             
@@ -487,11 +600,19 @@ class CurriculumPage:
             ).pack(pady=10)
             return
 
-
         CTkLabel(win, text="Program").pack(anchor="w", padx=20)
-        prog_menu = CTkOptionMenu(win, variable=prog_var, values=options,
-                                fg_color="#BF3131", button_color="#691612",
-                                text_color="#FFFFFF")
+        prog_menu = CTkOptionMenu(
+            win,
+            variable=prog_var,
+            values=options,
+            fg_color="#BF3131",
+            button_color="#691612",
+            button_hover_color="#8B1D18",
+            text_color="#FFFFFF",
+            dropdown_fg_color="#FFFFFF",
+            dropdown_hover_color="#F3D0D0",
+            dropdown_text_color="#111827",
+        )
         prog_menu.pack(fill="x", padx=20, pady=(0, 10))
         prog_var.set(options[0])
 
@@ -521,7 +642,9 @@ class CurriculumPage:
             self._load_curricula()     # refresh left list
 
         CTkButton(
-            win, text="Add", fg_color="#691612",
-            text_color="#FFFFFF", hover_color="#8B1D18",
+            win, text="Add",
+            fg_color="#691612",
+            text_color="#FFFFFF",
+            hover_color="#8B1D18",
             command=submit
-            ).pack(pady=10)
+        ).pack(pady=10)
