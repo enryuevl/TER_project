@@ -21,17 +21,31 @@ class CurriculumPage:
     def _build_ui(self):
         for w in self.master.winfo_children():
             w.destroy()
+            
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure(
+            "Treeview",
+            background="#FFFFFF",
+            foreground="#333333",
+            rowheight=24,
+            fieldbackground="#FFFFFF",
+            font=("Poppins", 11),
+        )
+        style.configure(
+            "Treeview.Heading",
+            background="#691612",
+            foreground="#FFFFFF",
+            font=("Poppins", 11, "bold"),
+        )
+        style.map(
+            "Treeview",
+            background=[("selected", "#BF3131")],
+            foreground=[("selected", "#FFFFFF")],
+        )
 
         self.container = CTkFrame(self.master, fg_color="transparent")
         self.container.pack(fill="both", expand=True, padx=20, pady=20)
-
-        # Title bar (like other pages)
-        title_bar = CTkFrame(self.container, fg_color="#BF3131", height=70, corner_radius=10)
-        title_bar.pack(fill="x", padx=10, pady=(0, 12))
-        CTkLabel(
-            title_bar, text="Curriculum Management",
-            font=("Poppins", 18, "bold"), text_color="#FFFFFF"
-        ).pack(side="left", padx=20, pady=12)
 
         # Top buttons: Curriculums | Add | Remove
         top_bar = CTkFrame(self.container, fg_color="transparent")
@@ -39,20 +53,24 @@ class CurriculumPage:
 
         CTkButton(
             top_bar, text="Curriculums", state="disabled",
-            fg_color="#691612", text_color="#FFFFFF"
-        ).pack(side="left", padx=(0, 8))
+            fg_color="#691612", text_color="#FFFFFF",
+            hover_color="#691612",   # keep same, since disabled
+            ).pack(side="left", padx=(0, 8))
 
         CTkButton(
             top_bar, text="Add", width=90,
             fg_color="#BF3131", text_color="#FFFFFF",
+            hover_color="#8B1D18",   # 🔴 your hover red
             command=self._open_add_curriculum_dialog
         ).pack(side="left", padx=4)
 
         CTkButton(
             top_bar, text="Remove", width=90,
             fg_color="#AC5353", text_color="#FFFFFF",
+            hover_color="#8B1D18",
             command=self._delete_selected_curriculum
         ).pack(side="left", padx=4)
+
 
         # Main split: left list of curricula, right subjects
         main = CTkFrame(self.container, fg_color="#FFFFFF", corner_radius=10)
@@ -60,7 +78,6 @@ class CurriculumPage:
         main.grid_columnconfigure(0, weight=0, minsize=260)
         main.grid_columnconfigure(1, weight=1)
         main.grid_rowconfigure(0, weight=1)
-        main.grid_rowconfigure(1, weight=0)
 
         # ---- Left: list of curricula ----
         left = CTkFrame(main, fg_color="#F8F9FA", corner_radius=10)
@@ -108,8 +125,8 @@ class CurriculumPage:
         self.subj_tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
         # ---- Bottom buttons: add/remove subjects, set active ----
-        bottom = CTkFrame(main, fg_color="transparent")
-        bottom.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
+        bottom = CTkFrame(self.container, fg_color="transparent")
+        bottom.pack(fill="x", padx=10, pady=(4, 0))
 
         CTkButton(
             bottom, text="Add Subjects",
@@ -132,7 +149,7 @@ class CurriculumPage:
             command=self._set_curriculum_active
         ).pack(side="left", padx=5, pady=5)
 
-        
+
     # ---------- load data ----------
     def _load_curricula(self):
         self.curr_tree.delete(*self.curr_tree.get_children())
@@ -261,8 +278,12 @@ class CurriculumPage:
             self._subject_vars[sid] = var
             text = f"[Y{year} {sem}] {code} - {title}"
             CTkCheckBox(
-                scroll, text=text, variable=var,
-                font=("Poppins", 12)
+            scroll, text=text, variable=var,
+            font=("Poppins", 12),
+            fg_color="#BF3131",
+            hover_color="#8B1D18",
+            border_color="#691612",
+            checkmark_color="#FFFFFF",
             ).pack(anchor="w", padx=10, pady=2)
 
         # bottom buttons inside popup
@@ -270,10 +291,11 @@ class CurriculumPage:
         btn_row.pack(fill="x", pady=8)
 
         CTkButton(
-            btn_row, text="Add new subject",
-            fg_color="#BF3131", text_color="#FFFFFF",
-            command=lambda: self._open_add_subject(win)
-        ).pack(side="left", padx=10)
+            btn_row, text="Finish",
+            fg_color="#691612", text_color="#FFFFFF",
+            hover_color="#8B1D18",
+            command=finish
+            ).pack(side="right", padx=10)
 
         def finish():
             self._save_subject_selection()
@@ -283,8 +305,9 @@ class CurriculumPage:
         CTkButton(
             btn_row, text="Finish",
             fg_color="#691612", text_color="#FFFFFF",
+            hover_color="#8B1D18",
             command=finish
-        ).pack(side="right", padx=10)
+            ).pack(side="right", padx=10)
 
     def _save_subject_selection(self):
         chosen = {sid for sid, var in self._subject_vars.items() if var.get() == 1}
@@ -381,8 +404,11 @@ class CurriculumPage:
             # reload checklist in parent popup
             self._open_subject_picker()
 
-        CTkButton(win, text="Add Subject", fg_color="#691612",
-                  text_color="#FFFFFF", command=submit).pack(pady=12)
+        CTkButton(
+            win, text="Add Subject", fg_color="#691612",
+            text_color="#FFFFFF", hover_color="#8B1D18",
+            command=submit
+        ).pack(pady=12)
 
     def _remove_selected_subjects(self):
         if not self.current_curriculum_id:
@@ -434,7 +460,7 @@ class CurriculumPage:
         win.geometry("360x260")
         win.grab_set()
 
-        CTkLabel(win, text="Add new curriculum",
+        CTkLabel(win, text="Add New Curriculum",
                 font=("Poppins", 16, "bold"), text_color="#691612")\
             .pack(pady=(15, 5))
 
@@ -494,5 +520,8 @@ class CurriculumPage:
             win.destroy()
             self._load_curricula()     # refresh left list
 
-        CTkButton(win, text="Add", fg_color="#691612",
-                text_color="#FFFFFF", command=submit).pack(pady=10)
+        CTkButton(
+            win, text="Add", fg_color="#691612",
+            text_color="#FFFFFF", hover_color="#8B1D18",
+            command=submit
+            ).pack(pady=10)
