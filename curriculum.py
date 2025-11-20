@@ -60,6 +60,7 @@ class CurriculumPage:
         main.grid_columnconfigure(0, weight=0, minsize=260)
         main.grid_columnconfigure(1, weight=1)
         main.grid_rowconfigure(0, weight=1)
+        main.grid_rowconfigure(1, weight=0)
 
         # ---- Left: list of curricula ----
         left = CTkFrame(main, fg_color="#F8F9FA", corner_radius=10)
@@ -107,27 +108,31 @@ class CurriculumPage:
         self.subj_tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
         # ---- Bottom buttons: add/remove subjects, set active ----
-        bottom = CTkFrame(self.container, fg_color="transparent")
-        bottom.pack(fill="x", padx=10, pady=(4, 0))
+        bottom = CTkFrame(main, fg_color="transparent")
+        bottom.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
 
         CTkButton(
             bottom, text="Add Subjects",
             fg_color="#691612", text_color="#FFFFFF",
+            hover_color="#8B1D18",
             command=self._open_subject_picker
         ).pack(side="left", padx=5, pady=5)
 
         CTkButton(
             bottom, text="Remove Subjects",
             fg_color="#BF3131", text_color="#FFFFFF",
+            hover_color="#8B1D18",
             command=self._remove_selected_subjects
         ).pack(side="left", padx=5, pady=5)
 
         CTkButton(
             bottom, text="Set as Active",
             fg_color="#AC5353", text_color="#FFFFFF",
+            hover_color="#8B1D18",
             command=self._set_curriculum_active
         ).pack(side="left", padx=5, pady=5)
 
+        
     # ---------- load data ----------
     def _load_curricula(self):
         self.curr_tree.delete(*self.curr_tree.get_children())
