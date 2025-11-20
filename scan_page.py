@@ -88,44 +88,87 @@ class ScanPage:
         right_column.grid(row=0, column=1, sticky="nsew", padx=10)
         self._build_preview_panel(right_column)
         
-
     def _build_scanner_controls(self, parent):
         scanner_frame = CTkFrame(parent, fg_color="#FFFFFF", corner_radius=10)
         scanner_frame.pack(fill="x", pady=10)
 
-        CTkLabel(scanner_frame, text="Document Scanner",
-                font=('Montserrat', 18, 'bold'),
-                text_color="#334155").pack(pady=(15, 10), padx=15, anchor="w")
+        CTkLabel(
+            scanner_frame,
+            text="Document Scanner",
+            font=("Montserrat", 18, "bold"),
+            text_color="#334155"
+        ).pack(pady=(15, 10), padx=15, anchor="w")
 
-        button_frame = CTkFrame(scanner_frame, fg_color="transparent")
-        button_frame.pack(fill="x", pady=10, padx=15)
+        # Container for dropdown + scan button
+        controls_frame = CTkFrame(scanner_frame, fg_color="transparent")
+        controls_frame.pack(fill="x", pady=10, padx=15)
 
+        # --- Scanner dropdown label ---
+        CTkLabel(
+            controls_frame,
+            text="Select Scanner",
+            font=("Montserrat", 16, "bold"),
+            text_color="#334155"
+        ).pack(anchor="w", pady=(0, 4))
+
+        # Try to get available scanner names (adjust list_devices() to your WIAScanner API)
+        devices = []
+        try:
+            if hasattr(self, "scanner") and hasattr(self.scanner, "list_devices"):
+                devices = self.scanner.list_devices() or []
+        except Exception:
+            devices = []
+
+        if not devices:
+            devices = ["No scanners detected"]
+            state = "disabled"
+        else:
+            state = "normal"
+
+        # --- Scanner dropdown ---
+        self.scanner_var = StringVar(value=devices[0])
+        self.scanner_dropdown = CTkOptionMenu(
+            controls_frame,
+            variable=self.scanner_var,
+            values=devices,
+            width=250,
+            height=35,
+            font=("Montserrat", 14),
+            state=state,
+            fg_color="#BF3131",
+            button_color="#691612",
+            button_hover_color="#8E1616",
+            text_color="#FFFFFF",
+            dropdown_fg_color="#FFFFFF",
+            dropdown_hover_color="#F3D0D0",
+            dropdown_text_color="#333333",
+            dropdown_font=("Montserrat", 14),
+        )
+        self.scanner_dropdown.pack(fill="x", pady=(0, 10))
+
+        # --- Scan button (kept) ---
         self.btn_scan = CTkButton(
-            button_frame, text="Scan", command=self.start_scan,
-            fg_color="#691612", hover_color="#550d0a",
-            text_color="#FFFFFF", font=('Montserrat', 14), height=40, corner_radius=8
+            controls_frame,
+            text="Scan",
+            command=self.start_scan,
+            fg_color="#691612",
+            hover_color="#550d0a",
+            text_color="#FFFFFF",
+            font=("Montserrat", 14),
+            height=40,
+            corner_radius=8
         )
         self.btn_scan.pack(fill="x", pady=5)
 
-        self.btn_check_existing = CTkButton(
-            button_frame, text="Check Existing", command=self.scan_existing,
-            fg_color="#BF3131", hover_color="#550d0a",
-            text_color="#FFFFFF", font=('Montserrat', 14), height=40, corner_radius=8
+        # Status text
+        self.status_label = CTkLabel(
+            scanner_frame,
+            text="Scanner disconnected" if state == "disabled" else "Scanner ready",
+            font=("Montserrat", 14),
+            text_color="#64748B"
         )
-        self.btn_check_existing.pack(fill="x", pady=5)
-
-        self.btn_clear_docs = CTkButton(
-            button_frame, text="Clear Documents", command=self.clear_scan,
-            fg_color="#AC5353", hover_color="#550d0a",
-            text_color="#FFFFFF", font=('Montserrat', 14), height=40, corner_radius=8
-        )
-        self.btn_clear_docs.pack(fill="x", pady=5)
-
-        self.status_label = CTkLabel(scanner_frame,
-                                    text="Scanner disconnected",
-                                    font=('Montserrat', 14),
-                                    text_color="#64748B")
         self.status_label.pack(pady=5, padx=15, anchor="w")
+   
 
     def _build_teacher_dropdown(self, parent):
         teacher_frame = CTkFrame(parent, fg_color="#FFFFFF", corner_radius=10)

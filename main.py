@@ -64,7 +64,7 @@ def create_app(role: str, username: str, department_id: int | None):
     icons = {
         "Dashboard": "dashboard.png",
         "Scan": "scan.png",
-        "Admin": "admin.png",
+        "Evaluation": "admin.png",
         "Results": "results.png",
         "Management": "accounts.png",
         "Logout": "logout.png"
@@ -166,7 +166,7 @@ def create_app(role: str, username: str, department_id: int | None):
     nav_actions = {
         "Dashboard": lambda: HomePage(main_frame),
         "Scan": lambda: ScanPage(main_frame, processed_results),
-        "Admin": lambda: DeanEvaluationForm(main_frame, processed_results),
+        "Evaluation": lambda: DeanEvaluationForm(main_frame, processed_results),
         "Results": lambda: ResultsPage(main_frame, processed_results),
         "Management": lambda: AccountsDatabasePage(main_frame, ctx),
     }
@@ -174,9 +174,9 @@ def create_app(role: str, username: str, department_id: int | None):
     # Role-based visibility
     role = (role or "").lower()
     if role == "admin":
-        allowed = {"Dashboard", "Scan", "Admin", "Results", "Management"}
+        allowed = {"Dashboard", "Scan", "Evaluation", "Results", "Management"}
     elif role == "dean":
-        allowed = {"Dashboard", "Scan", "Admin", "Results", "Management"}  
+        allowed = {"Dashboard", "Scan", "Evaluation", "Results", "Management"}  
     else:  # operator or unknown
         allowed = {"Dashboard", "Scan", "Results", "Management"}  
 
