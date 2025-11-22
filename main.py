@@ -166,7 +166,7 @@ def create_app(role: str, username: str, department_id: int | None):
     nav_actions = {
         "Dashboard": lambda: HomePage(main_frame),
         "Scan": lambda: ScanPage(main_frame, processed_results),
-        "Evaluation": lambda: DeanEvaluationForm(main_frame, processed_results),
+        "Evaluation": lambda: DeanEvaluationForm(main_frame, processed_results, ctx=ctx),
         "Results": lambda: ResultsPage(main_frame, processed_results),
         "Management": lambda: AccountsDatabasePage(main_frame, ctx),
     }
