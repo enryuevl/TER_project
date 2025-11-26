@@ -97,20 +97,31 @@ def create_app(role: str, username: str, department_id: int | None):
     )
     logout_btn.pack(pady=30, padx=20, side="bottom")
 
-    # ── Topbar
+    # Top bar
     topbar = CTkFrame(master=app, height=60, fg_color="#BF3131", corner_radius=0)
     topbar.pack(side="top", fill="x")
-
+    
     # Shadow
     shadow = CTkFrame(master=app, height=2, fg_color="#B22222")
     shadow.pack(side="top", fill="x")
 
+
+
+    # --- SUBTITLE ---
     CTkLabel(
         master=topbar,
-        text=f"Camarines Norte State College  •  {username} ({role})",
-        font=("Poppins", 18, "bold"),
+        text=f"Teaching Efficiency Rating – Automatic Tallying System  •  {username} ({role})",
+        font=("Poppins", 14),        
+        text_color="#FFEFEF"
+    ).place(relx=0.02, rely=0.72, anchor="w")   
+    
+        # --- TITLE ---
+    CTkLabel(
+        master=topbar,
+        text="Camarines Norte State College",
+        font=("Poppins", 20, "bold"),  
         text_color="#FFFFFF"
-    ).place(relx=0.02, rely=0.5, anchor="w")
+    ).place(relx=0.02, rely=0.36, anchor="w")   
 
     # ── Main content
     main_frame = CTkFrame(master=app, fg_color="#F5F5F5")
