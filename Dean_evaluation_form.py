@@ -68,7 +68,7 @@ class OverwriteDeanEvaluationError(Exception):
 
 # --- Main Panel ---
 class DeanEvaluationForm:
-    def __init__(self, master, processed_results, results_file=None):
+    def __init__(self, master, processed_results, results_file=None, ctx=None):
         if results_file is None:
             results_file = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "results.pkl")
 
@@ -77,6 +77,7 @@ class DeanEvaluationForm:
         self.processed_results = processed_results
         self.rating_vars = {}
         self.teacher_name_to_id = {}
+        self.ctx = ctx
 
         if results_file == "results.pkl" or not os.path.isabs(results_file):
             base_dir = os.path.dirname(db.get_default_db_path())
@@ -117,7 +118,19 @@ class DeanEvaluationForm:
         teacher_list = []
         try:
             with db.connect() as conn:
-                rows = conn.execute("SELECT id, full_name FROM faculty ORDER BY full_name").fetchall()
+                teacher_query = [
+                    "SELECT id, full_name",
+                    "FROM faculty",
+                    "WHERE is_active = 1"
+                ]
+                params = []
+                dept_id = getattr(self.ctx, "department_id", None)
+                if dept_id is not None:
+                    teacher_query.append("AND department_id = ?")
+                    params.append(dept_id)
+                teacher_query.append("ORDER BY full_name")
+                query = " ".join(teacher_query)
+                rows = conn.execute(query, params).fetchall()
                 if rows:
                     self.teacher_name_to_id = {full_name: fid for fid, full_name in rows}
                     teacher_list = list(self.teacher_name_to_id.keys())
