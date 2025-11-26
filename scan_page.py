@@ -48,6 +48,98 @@ class ScanPage:
         # Load teacher list from DB
         self.load_teachers()
         
+    def _show_validation_dialog(self, title: str, message: str, badge_text: str = "NOTICE"):
+        """
+        ATS-themed simple validation dialog with a single OK button.
+        Used instead of messagebox.showwarning for things like 'Select Subject'.
+        """
+        TOPBAR = "#BF3131"
+        PANEL_BG = "#F5F5F5"
+        LIGHT_TEXT = "#FFEFEF"
+        WHITE = "#FFFFFF"
+
+        parent = self.master
+
+        dialog = CTkToplevel(parent)
+        dialog.title(title)
+        dialog.resizable(False, False)
+
+        dialog.transient(parent)
+        dialog.grab_set()
+
+        main_frame = CTkFrame(dialog, fg_color=PANEL_BG, corner_radius=12)
+        main_frame.pack(fill="both", expand=True, padx=16, pady=16)
+
+        # Header
+        header = CTkFrame(main_frame, fg_color=TOPBAR, corner_radius=10)
+        header.pack(fill="x", padx=8, pady=(8, 4))
+
+        CTkLabel(
+            header,
+            text=title,
+            font=("Poppins", 16, "bold"),
+            text_color=WHITE
+        ).pack(side="left", padx=12, pady=8)
+
+        CTkLabel(
+            header,
+            text=badge_text.upper(),
+            font=("Poppins", 11, "bold"),
+            text_color=TOPBAR,
+            fg_color=LIGHT_TEXT,
+            corner_radius=999,
+            padx=10,
+            pady=4,
+        ).pack(side="right", padx=12, pady=8)
+
+        # Body
+        body = CTkFrame(main_frame, fg_color=WHITE, corner_radius=10)
+        body.pack(fill="both", expand=True, padx=8, pady=(4, 8))
+
+        CTkLabel(
+            body,
+            text=message,
+            font=("Poppins", 12),
+            text_color="#333333",
+            justify="left",
+        ).pack(anchor="w", padx=12, pady=(12, 8))
+
+        # Footer
+        footer = CTkFrame(main_frame, fg_color=PANEL_BG)
+        footer.pack(fill="x", padx=8, pady=(0, 8))
+
+        def close_dialog():
+            dialog.destroy()
+
+        CTkButton(
+            footer,
+            text="OK",
+            font=("Poppins", 12, "bold"),
+            fg_color="#AC5353",
+            hover_color="#BF3131",
+            text_color=WHITE,
+            corner_radius=8,
+            width=100,
+            command=close_dialog
+        ).pack(side="right", padx=8, pady=4)
+
+        # Center on parent
+        dialog.update_idletasks()
+        w = dialog.winfo_width()
+        h = dialog.winfo_height()
+        if w < 380:
+            w = 380
+        if h < 180:
+            h = 180
+        dialog.minsize(w, h)
+
+        x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (w // 2)
+        y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (h // 2)
+        dialog.geometry(f"{w}x{h}+{x}+{y}")
+
+        dialog.wait_window(dialog)
+
+        
         
     def _open_scan_progress_dialog(self):
         """
@@ -566,20 +658,27 @@ class ScanPage:
         # -------- fast, synchronous validations (before disabling UI) --------
         teacher = (self.teacher_var.get() or "").strip()
         if not teacher or teacher in ("Loading...", "No teachers found"):
-            messagebox.showwarning("Select Teacher", "Please select a teacher first.")
+            self._show_validation_dialog(
+                "Select Teacher",
+                "Please select a teacher before starting the scan.",
+                badge_text="Warning"
+            )
             return
 
         label = self.subject_var.get() if hasattr(self, "subject_var") else ""
         subj_code = self.subject_code_by_label.get(label, "")
         if not subj_code:
-            messagebox.showwarning("Select Subject", "Please select a subject for this scan.")
+            self._show_validation_dialog(
+                "Select Subject",
+                "Please select a subject for this scan.",
+                badge_text="Warning"
+            )
             return
 
         # -------- disable controls + show custom 'scanning in progress' dialog --------
         self.set_controls_state("disabled")
         set_sidebar_state("disabled")
 
-        # create ATS-styled scan dialog
         self._open_scan_progress_dialog()
 
         # -------- worker thread --------
@@ -665,6 +764,7 @@ class ScanPage:
                     pass
 
         threading.Thread(target=worker, daemon=True).start()
+
 
 
 

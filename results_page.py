@@ -393,35 +393,59 @@ class ResultsPage:
                 section_row_index += 1
 
     # ---------------- Controls ---------------- #
+
     def _build_controls(self, parent):
         control_frame = CTkFrame(parent, fg_color="transparent")
         control_frame.pack(fill="x", padx=10, pady=10)
 
-        # View Summary (module)
-        summary_btn = CTkButton(
-            control_frame,
+
+        # ----- Common button style -----
+        def make_button(master, text, command, fg="#AC5353", hover="#BF3131", width=170):
+            return CTkButton(
+                master,
+                text=text,
+                command=command,
+                fg_color=fg,
+                hover_color=hover,
+                text_color="#FFFFFF",
+                font=("Poppins", 14, "bold"),
+                height=38,
+                corner_radius=8,
+                width=width,
+            )
+
+        # Primary actions (left group)
+        btn_group_left = CTkFrame(control_frame, fg_color="transparent")
+        btn_group_left.pack(side="left")
+
+        summary_btn = make_button(
+            btn_group_left,
             text="View Summary",
             command=lambda: self._open_summary_for_current(),
-            fg_color="#DC2626",
-            hover_color="#B91C1C",
-            text_color="#FFFFFF",
-            font=("Poppins", 14, "bold"),
-            corner_radius=5
         )
         summary_btn.pack(side="left", padx=5)
 
-        # Archive
-        archive_btn = CTkButton(
+        export_btn = make_button(
+            btn_group_left,
+            text="Export Summary",
+            command=lambda: self._export_summary_via_module(),
+        )
+        export_btn.pack(side="left", padx=5)
+
+        # Spacer to push Archive to the right
+        CTkFrame(control_frame, fg_color="transparent").pack(side="left", expand=True)
+
+        # Archive (stronger / darker accent, right aligned)
+        archive_btn = make_button(
             control_frame,
             text="Archive this Semester",
             command=self.archive_current_semester,
-            fg_color="#691612",
-            hover_color="#8B1D18",
-            text_color="#FFFFFF",
-            font=("Roboto", 14, "bold"),
-            corner_radius=5
+            fg="#691612",
+            hover="#8B1D18",
+            width=210,
         )
-        archive_btn.pack(side="left", padx=5)
+        archive_btn.pack(side="right", padx=5)
+
 
     def _open_summary_for_current(self):
         if not self.current_teacher:
