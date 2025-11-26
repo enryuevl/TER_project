@@ -19,8 +19,7 @@ from scan_page import ScanPage
 from results_page import ResultsPage
 from Dean_evaluation_form import DeanEvaluationForm
 from home_page import HomePage
-from dataclasses import dataclass  
-
+from dataclasses import dataclass
 
 
 @dataclass
@@ -30,9 +29,12 @@ class AppContext:
     department_id: int | None
 
 
+def create_app(role: str, username: str, department_id: int | None, on_logout=None):
+    """Start the main ATS window with role-based navigation.
 
-def create_app(role: str, username: str, department_id: int | None):    
-    """Start the main ATS window with role-based navigation."""
+    on_logout: optional callback that will be called after the app window is destroyed.
+               Use this to show your login page again if you want.
+    """
     # Initialize database (creates Documents/MyWork/ter_db.sqlite on first run)
     db.initialize_database()
 
@@ -77,9 +79,122 @@ def create_app(role: str, username: str, department_id: int | None):
         except Exception:
             return None
 
+    # ───────────── CUSTOM LOGOUT DIALOG ─────────────
+    def show_logout_dialog():
+        """
+        Custom ATS-themed logout confirmation dialog.
+        Returns True if user confirms logout, False otherwise.
+        """
+        TOPBAR = "#BF3131"
+        SIDEBAR_BTN = "#AC5353"
+        HOVER = "#BF3131"
+        PANEL_BG = "#F5F5F5"
+        LIGHT_TEXT = "#FFEFEF"
+        WHITE = "#FFFFFF"
+
+        dialog = CTkToplevel(app)
+        dialog.title("Confirm Logout")
+        dialog.geometry("480x260")
+        dialog.resizable(False, False)
+
+        dialog.transient(app)
+        dialog.grab_set()
+
+        main_frame = CTkFrame(dialog, fg_color=PANEL_BG, corner_radius=12)
+        main_frame.pack(fill="both", expand=True, padx=16, pady=16)
+
+        # Header bar
+        header = CTkFrame(main_frame, fg_color=TOPBAR, corner_radius=10)
+        header.pack(fill="x", padx=8, pady=(8, 4))
+
+        CTkLabel(
+            header,
+            text="Logout from ATS?",
+            font=("Poppins", 16, "bold"),
+            text_color=WHITE
+        ).pack(side="left", padx=12, pady=8)
+
+        CTkLabel(
+            header,
+            text="SESSION",
+            font=("Poppins", 11, "bold"),
+            text_color=TOPBAR,
+            fg_color=LIGHT_TEXT,
+            corner_radius=999,
+            padx=10,
+            pady=4,
+        ).pack(side="right", padx=12, pady=8)
+
+        # Body
+        body = CTkFrame(main_frame, fg_color=WHITE, corner_radius=10)
+        body.pack(fill="both", expand=True, padx=8, pady=(4, 8))
+
+        CTkLabel(
+            body,
+            text=(
+                "You are about to logout from the Teaching Efficiency Rating –\n"
+                "Automatic Tallying System.\n\n"
+                "Do you want to end this session and return to the login screen?"
+            ),
+            font=("Poppins", 12),
+            text_color="#333333",
+            justify="left"
+        ).pack(anchor="w", padx=12, pady=(12, 8))
+
+        # Footer buttons
+        footer = CTkFrame(main_frame, fg_color=PANEL_BG)
+        footer.pack(fill="x", padx=8, pady=(0, 8))
+
+        result = {"confirmed": False}
+
+        def on_cancel():
+            result["confirmed"] = False
+            dialog.destroy()
+
+        def on_logout_click():
+            result["confirmed"] = True
+            dialog.destroy()
+
+        CTkButton(
+            footer,
+            text="Cancel",
+            font=("Poppins", 12, "bold"),
+            fg_color="#E5E7EB",
+            hover_color="#D1D5DB",
+            text_color="#111827",
+            corner_radius=8,
+            width=120,
+            command=on_cancel
+        ).pack(side="right", padx=8, pady=4)
+
+        CTkButton(
+            footer,
+            text="Logout",
+            font=("Poppins", 12, "bold"),
+            fg_color=SIDEBAR_BTN,
+            hover_color=HOVER,
+            text_color=WHITE,
+            corner_radius=8,
+            width=120,
+            command=on_logout_click
+        ).pack(side="right", padx=8, pady=4)
+
+        # Center dialog over main app
+        dialog.update_idletasks()
+        x = app.winfo_rootx() + (app.winfo_width() // 2) - (dialog.winfo_width() // 2)
+        y = app.winfo_rooty() + (app.winfo_height() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+
+        dialog.wait_window(dialog)
+        return result["confirmed"]
+
     def confirm_logout():
-        if messagebox.askyesno("Logout", "Are you sure you want to logout?"):
+        if show_logout_dialog():
+            # Close main ATS window
             app.destroy()
+            # Optional: go back to login page
+            if callable(on_logout):
+                on_logout()
 
     logout_btn = CTkButton(
         master=sidebar_frame,
@@ -100,28 +215,26 @@ def create_app(role: str, username: str, department_id: int | None):
     # Top bar
     topbar = CTkFrame(master=app, height=60, fg_color="#BF3131", corner_radius=0)
     topbar.pack(side="top", fill="x")
-    
+
     # Shadow
     shadow = CTkFrame(master=app, height=2, fg_color="#B22222")
     shadow.pack(side="top", fill="x")
-
-
 
     # --- SUBTITLE ---
     CTkLabel(
         master=topbar,
         text=f"Teaching Efficiency Rating – Automatic Tallying System  •  {username} ({role})",
-        font=("Poppins", 14),        
+        font=("Poppins", 14),
         text_color="#FFEFEF"
-    ).place(relx=0.02, rely=0.72, anchor="w")   
-    
-        # --- TITLE ---
+    ).place(relx=0.02, rely=0.72, anchor="w")
+
+    # --- TITLE ---
     CTkLabel(
         master=topbar,
         text="Camarines Norte State College",
-        font=("Poppins", 20, "bold"),  
+        font=("Poppins", 20, "bold"),
         text_color="#FFFFFF"
-    ).place(relx=0.02, rely=0.36, anchor="w")   
+    ).place(relx=0.02, rely=0.36, anchor="w")
 
     # ── Main content
     main_frame = CTkFrame(master=app, fg_color="#F5F5F5")
@@ -154,7 +267,7 @@ def create_app(role: str, username: str, department_id: int | None):
     sidebar_buttons = {}
     # Set global app context
     ctx = AppContext(role=role, username=username, department_id=department_id)
-    
+
     def add_nav_button(name, action):
         btn = CTkButton(
             master=sidebar_frame,
@@ -183,13 +296,13 @@ def create_app(role: str, username: str, department_id: int | None):
     }
 
     # Role-based visibility
-    role = (role or "").lower()
-    if role == "admin":
+    role_lower = (role or "").lower()
+    if role_lower == "admin":
         allowed = {"Dashboard", "Scan", "Evaluation", "Results", "Management"}
-    elif role == "dean":
-        allowed = {"Dashboard", "Scan", "Evaluation", "Results", "Management"}  
+    elif role_lower == "dean":
+        allowed = {"Dashboard", "Scan", "Evaluation", "Results", "Management"}
     else:  # operator or unknown
-        allowed = {"Dashboard", "Scan", "Results", "Management"}  
+        allowed = {"Dashboard", "Scan", "Results", "Management"}
 
     for name, action in nav_actions.items():
         if name in allowed:
