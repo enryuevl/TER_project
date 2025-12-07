@@ -2,6 +2,7 @@ from customtkinter import *
 from CTkTable import *
 from tkinter import filedialog, messagebox
 import os
+import sys
 import pickle
 from tkinter import ttk
 from datetime import date
@@ -27,6 +28,143 @@ class ResultsPage:
         self.summary = SummaryFormController(self.processed_results, db_module=db)
 
         self._build_ui()
+    def _show_archive_dialog(self, zip_path: Path, department: str, academic_year: str, semester: str):
+        """
+        ATS-themed dialog to notify that the archive was successfully created.
+        """
+        TOPBAR = "#BF3131"
+        SIDEBAR_BTN = "#AC5353"
+        HOVER = "#BF3131"
+        PANEL_BG = "#F5F5F5"
+        LIGHT_TEXT = "#FFEFEF"
+        WHITE = "#FFFFFF"
+
+        parent = self.master
+
+        dialog = CTkToplevel(parent)
+        dialog.title("Archive Created")
+        dialog.resizable(False, False)
+
+        dialog.transient(parent)
+        dialog.grab_set()
+
+        main_frame = CTkFrame(dialog, fg_color=PANEL_BG, corner_radius=12)
+        main_frame.pack(fill="both", expand=True, padx=16, pady=16)
+
+        # Header bar
+        header = CTkFrame(main_frame, fg_color=TOPBAR, corner_radius=10)
+        header.pack(fill="x", padx=8, pady=(8, 4))
+
+        CTkLabel(
+            header,
+            text="Archive successfully created",
+            font=("Poppins", 16, "bold"),
+            text_color=WHITE
+        ).pack(side="left", padx=12, pady=8)
+
+        CTkLabel(
+            header,
+            text="ARCHIVE",
+            font=("Poppins", 11, "bold"),
+            text_color=TOPBAR,
+            fg_color=LIGHT_TEXT,
+            corner_radius=999,
+            padx=10,
+            pady=4,
+        ).pack(side="right", padx=12, pady=8)
+
+        # Body
+        body = CTkFrame(main_frame, fg_color=WHITE, corner_radius=10)
+        # 🔧 don't let body steal *all* vertical space
+        body.pack(fill="both", expand=False, padx=8, pady=(4, 8))
+
+        CTkLabel(
+            body,
+            text=(
+                "Your semester archive has been generated with the following details:\n\n"
+                f"• Department: {department}\n"
+                f"• Academic Year: {academic_year}\n"
+                f"• Semester: {semester}\n\n"
+                "Archive file:"
+            ),
+            font=("Poppins", 12),
+            text_color="#333333",
+            justify="left",
+        ).pack(anchor="w", padx=12, pady=(12, 4))
+
+        # Path label (slightly smaller / dimmer)
+        CTkLabel(
+            body,
+            text=str(zip_path),
+            font=("Poppins", 11),
+            text_color="#6B7280",
+            justify="left"
+        ).pack(anchor="w", padx=12, pady=(0, 12))
+
+        # Footer buttons
+        footer = CTkFrame(main_frame, fg_color=PANEL_BG)
+        footer.pack(fill="x", padx=8, pady=(0, 8))
+
+        def open_folder():
+            try:
+                folder = zip_path.parent
+                if os.name == "nt":
+                    os.startfile(folder)
+                elif sys.platform == "darwin":
+                    import subprocess
+                    subprocess.run(["open", folder])
+                else:
+                    import subprocess
+                    subprocess.run(["xdg-open", folder])
+            except Exception:
+                # swallow errors silently, dialog stays open
+                pass
+
+        def close_dialog():
+            dialog.destroy()
+
+        CTkButton(
+            footer,
+            text="Close",
+            font=("Poppins", 12, "bold"),
+            fg_color="#E5E7EB",
+            hover_color="#D1D5DB",
+            text_color="#111827",
+            corner_radius=8,
+            width=120,
+            command=close_dialog
+        ).pack(side="right", padx=8, pady=4)
+
+        CTkButton(
+            footer,
+            text="Open Folder",
+            font=("Poppins", 12, "bold"),
+            fg_color=SIDEBAR_BTN,
+            hover_color=HOVER,
+            text_color=WHITE,
+            corner_radius=8,
+            width=140,
+            command=open_folder
+        ).pack(side="right", padx=8, pady=4)
+
+        # Center dialog over parent – AFTER layout so we know its size
+        dialog.update_idletasks()
+        w = dialog.winfo_width()
+        h = dialog.winfo_height()
+
+        # Optional: enforce a minimum width/height just in case
+        if w < 520:
+            w = 520
+        if h < 260:
+            h = 260
+        dialog.minsize(w, h)
+
+        x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (w // 2)
+        y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (h // 2)
+        dialog.geometry(f"{w}x{h}+{x}+{y}")
+
+        dialog.wait_window(dialog)
+
 
     # ---------------- UI ---------------- #
     def _build_ui(self):
@@ -36,7 +174,7 @@ class ResultsPage:
         self.container = CTkFrame(self.master, fg_color="transparent")
         self.container.pack(fill="both", expand=True, padx=20, pady=20)
 
-            # --- Page Title Bar (same style as Data Management Panel) ---
+        # --- Page Title Bar (same style as Data Management Panel) ---
         title_bar = CTkFrame(self.container, fg_color="#BF3131", height=70, corner_radius=10)
         title_bar.pack(fill="x", padx=10, pady=(0, 12))
 
@@ -46,7 +184,7 @@ class ResultsPage:
             font=("Poppins", 18, "bold"),
             text_color="#FFFFFF"
         ).pack(side="left", padx=20, pady=12)
-    
+
         # Tabs: teachers
         self.tab_frame = CTkFrame(self.container, fg_color="transparent")
         self.tab_frame.pack(fill="x", pady=(0, 10))
@@ -106,15 +244,25 @@ class ResultsPage:
         header_frame = CTkFrame(self.content_frame, fg_color="transparent")
         header_frame.pack(fill="x", padx=20, pady=10)
 
-        CTkLabel(header_frame, text=f"Results for {teacher}",
-                 font=("Poppins", 20, "bold"), text_color="#691612").pack(side="left")
+        CTkLabel(
+            header_frame,
+            text=f"Results for {teacher}",
+            font=("Poppins", 20, "bold"),
+            text_color="#691612"
+        ).pack(side="left")
 
         rater_options = list(self.processed_results[teacher].keys())
         self.rater_var = StringVar(value=rater_options[0])
-        CTkOptionMenu(header_frame, variable=self.rater_var, values=rater_options,
-                      command=lambda r: self.build_table(r),
-                      fg_color="#691612", button_color="#AC5353",
-                      text_color="#FFFFFF", width=180).pack(side="right")
+        CTkOptionMenu(
+            header_frame,
+            variable=self.rater_var,
+            values=rater_options,
+            command=lambda r: self.build_table(r),
+            fg_color="#691612",
+            button_color="#AC5353",
+            text_color="#FFFFFF",
+            width=180
+        ).pack(side="right")
 
         self.table_container = CTkFrame(self.content_frame, fg_color="transparent")
         self.table_container.pack(fill="both", expand=True, padx=20, pady=(0, 20))
@@ -137,8 +285,12 @@ class ResultsPage:
 
         data = self.processed_results[self.current_teacher].get(rater_type, [])
         if not data:
-            CTkLabel(self.table_container, text="No results available",
-                     font=("Poppins", 14), text_color="#1F2937").pack(pady=20)
+            CTkLabel(
+                self.table_container,
+                text="No results available",
+                font=("Poppins", 14),
+                text_color="#1F2937"
+            ).pack(pady=20)
             return
 
         # ---------- Section Titles ----------
@@ -177,9 +329,14 @@ class ResultsPage:
         y_scroll = CTkScrollbar(frame, orientation="vertical")
         y_scroll.pack(side="right", fill="y")
 
-        self.tree = ttk.Treeview(frame, columns=headers, show="headings",
-                                 xscrollcommand=x_scroll.set,
-                                 yscrollcommand=y_scroll.set, height=20)
+        self.tree = ttk.Treeview(
+            frame,
+            columns=headers,
+            show="headings",
+            xscrollcommand=x_scroll.set,
+            yscrollcommand=y_scroll.set,
+            height=20
+        )
         self.tree.pack(fill="both", expand=True)
 
         x_scroll.configure(command=self.tree.xview)
@@ -187,21 +344,38 @@ class ResultsPage:
 
         # ---------- Styling ----------
         style = ttk.Style()
-        style.configure("Treeview", font=("Poppins", 11), rowheight=30,
-                        background="#F3F4F6", foreground="#1F2937")
-        style.configure("Treeview.Heading", font=("Poppins", 12, "bold"),
-                        foreground="#FFFFFF", background="#BF3131")
-        style.map("Treeview",
-                  background=[("selected", "#AC5353")],
-                  foreground=[("selected", "#FFFFFF")])
-        style.map("Treeview.Heading",
-                  background=[("hover", "#AC5353")],
-                  foreground=[("hover", "#FFFFFF")])
+        style.configure(
+            "Treeview",
+            font=("Poppins", 11),
+            rowheight=30,
+            background="#F3F4F6",
+            foreground="#1F2937"
+        )
+        style.configure(
+            "Treeview.Heading",
+            font=("Poppins", 12, "bold"),
+            foreground="#FFFFFF",
+            background="#BF3131"
+        )
+        style.map(
+            "Treeview",
+            background=[("selected", "#AC5353")],
+            foreground=[("selected", "#FFFFFF")]
+        )
+        style.map(
+            "Treeview.Heading",
+            background=[("hover", "#AC5353")],
+            foreground=[("hover", "#FFFFFF")]
+        )
 
         self.tree.tag_configure("oddrow", background="#F3F4F6", foreground="#1F2937")
         self.tree.tag_configure("evenrow", background="#F3F4F6", foreground="#1F2937")
-        self.tree.tag_configure("section", background="#BF3131", foreground="#FFFFFF",
-                                font=("Poppins", 12, "bold"))
+        self.tree.tag_configure(
+            "section",
+            background="#BF3131",
+            foreground="#FFFFFF",
+            font=("Poppins", 12, "bold")
+        )
 
         # ---------- Insert Data ----------
         for h in headers:
@@ -219,48 +393,59 @@ class ResultsPage:
                 section_row_index += 1
 
     # ---------------- Controls ---------------- #
+
     def _build_controls(self, parent):
         control_frame = CTkFrame(parent, fg_color="transparent")
         control_frame.pack(fill="x", padx=10, pady=10)
 
-        # View Summary (module)
-        summary_btn = CTkButton(
-            control_frame,
+
+        # ----- Common button style -----
+        def make_button(master, text, command, fg="#AC5353", hover="#BF3131", width=170):
+            return CTkButton(
+                master,
+                text=text,
+                command=command,
+                fg_color=fg,
+                hover_color=hover,
+                text_color="#FFFFFF",
+                font=("Poppins", 14, "bold"),
+                height=38,
+                corner_radius=8,
+                width=width,
+            )
+
+        # Primary actions (left group)
+        btn_group_left = CTkFrame(control_frame, fg_color="transparent")
+        btn_group_left.pack(side="left")
+
+        summary_btn = make_button(
+            btn_group_left,
             text="View Summary",
             command=lambda: self._open_summary_for_current(),
-            fg_color="#DC2626",
-            hover_color="#B91C1C",
-            text_color="#FFFFFF",
-            font=("Poppins", 14, "bold"),
-            corner_radius=5
         )
         summary_btn.pack(side="left", padx=5)
 
-        # Export Summary (module + log)
-        '''export_btn = CTkButton(
-            control_frame,
+        export_btn = make_button(
+            btn_group_left,
             text="Export Summary",
             command=lambda: self._export_summary_via_module(),
-            fg_color="#BF3131",
-            hover_color="#8B1D18",
-            text_color="#FFFFFF",
-            font=("Poppins", 14, "bold"),
-            corner_radius=5
         )
-        export_btn.pack(side="left", padx=5)'''
+        export_btn.pack(side="left", padx=5)
 
-        # Archive
-        archive_btn = CTkButton(
+        # Spacer to push Archive to the right
+        CTkFrame(control_frame, fg_color="transparent").pack(side="left", expand=True)
+
+        # Archive (stronger / darker accent, right aligned)
+        archive_btn = make_button(
             control_frame,
             text="Archive this Semester",
             command=self.archive_current_semester,
-            fg_color="#691612",
-            hover_color="#8B1D18",
-            text_color="#FFFFFF",
-            font=("Roboto", 14, "bold"),
-            corner_radius=5
+            fg="#691612",
+            hover="#8B1D18",
+            width=210,
         )
-        archive_btn.pack(side="left", padx=5)
+        archive_btn.pack(side="right", padx=5)
+
 
     def _open_summary_for_current(self):
         if not self.current_teacher:
@@ -400,8 +585,10 @@ class ResultsPage:
             messagebox.showerror("Archive failed", f"Could not create archive:\n{e}")
             return
 
-        messagebox.showinfo(
-            "Archived",
-            f"Created archive:\n{zip_noext.with_suffix('.zip')}\n\n"
-            f"Stored under: Archived > {department} > {academic_year}"
+        # Use the custom ATS-styled dialog instead of a basic messagebox
+        self._show_archive_dialog(
+            zip_path=zip_noext.with_suffix(".zip"),
+            department=department,
+            academic_year=academic_year,
+            semester=semester
         )

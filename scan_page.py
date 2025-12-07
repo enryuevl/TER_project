@@ -47,6 +47,198 @@ class ScanPage:
 
         # Load teacher list from DB
         self.load_teachers()
+        
+    def _show_validation_dialog(self, title: str, message: str, badge_text: str = "NOTICE"):
+        """
+        ATS-themed simple validation dialog with a single OK button.
+        Used instead of messagebox.showwarning for things like 'Select Subject'.
+        """
+        TOPBAR = "#BF3131"
+        PANEL_BG = "#F5F5F5"
+        LIGHT_TEXT = "#FFEFEF"
+        WHITE = "#FFFFFF"
+
+        parent = self.master
+
+        dialog = CTkToplevel(parent)
+        dialog.title(title)
+        dialog.resizable(False, False)
+
+        dialog.transient(parent)
+        dialog.grab_set()
+
+        main_frame = CTkFrame(dialog, fg_color=PANEL_BG, corner_radius=12)
+        main_frame.pack(fill="both", expand=True, padx=16, pady=16)
+
+        # Header
+        header = CTkFrame(main_frame, fg_color=TOPBAR, corner_radius=10)
+        header.pack(fill="x", padx=8, pady=(8, 4))
+
+        CTkLabel(
+            header,
+            text=title,
+            font=("Poppins", 16, "bold"),
+            text_color=WHITE
+        ).pack(side="left", padx=12, pady=8)
+
+        CTkLabel(
+            header,
+            text=badge_text.upper(),
+            font=("Poppins", 11, "bold"),
+            text_color=TOPBAR,
+            fg_color=LIGHT_TEXT,
+            corner_radius=999,
+            padx=10,
+            pady=4,
+        ).pack(side="right", padx=12, pady=8)
+
+        # Body
+        body = CTkFrame(main_frame, fg_color=WHITE, corner_radius=10)
+        body.pack(fill="both", expand=True, padx=8, pady=(4, 8))
+
+        CTkLabel(
+            body,
+            text=message,
+            font=("Poppins", 12),
+            text_color="#333333",
+            justify="left",
+        ).pack(anchor="w", padx=12, pady=(12, 8))
+
+        # Footer
+        footer = CTkFrame(main_frame, fg_color=PANEL_BG)
+        footer.pack(fill="x", padx=8, pady=(0, 8))
+
+        def close_dialog():
+            dialog.destroy()
+
+        CTkButton(
+            footer,
+            text="OK",
+            font=("Poppins", 12, "bold"),
+            fg_color="#AC5353",
+            hover_color="#BF3131",
+            text_color=WHITE,
+            corner_radius=8,
+            width=100,
+            command=close_dialog
+        ).pack(side="right", padx=8, pady=4)
+
+        # Center on parent
+        dialog.update_idletasks()
+        w = dialog.winfo_width()
+        h = dialog.winfo_height()
+        if w < 380:
+            w = 380
+        if h < 180:
+            h = 180
+        dialog.minsize(w, h)
+
+        x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (w // 2)
+        y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (h // 2)
+        dialog.geometry(f"{w}x{h}+{x}+{y}")
+
+        dialog.wait_window(dialog)
+
+        
+        
+    def _open_scan_progress_dialog(self):
+        """
+        ATS-themed non-closable 'Scanning in progress' dialog.
+        Stored as self.scan_dialog so the worker thread can close it.
+        """
+        TOPBAR = "#BF3131"
+        PANEL_BG = "#F5F5F5"
+        LIGHT_TEXT = "#FFEFEF"
+        WHITE = "#FFFFFF"
+
+        parent = self.master
+
+        dialog = CTkToplevel(parent)
+        dialog.title("Scanning in progress")
+        dialog.resizable(False, False)
+
+        # Make it modal & prevent closing via [X]
+        dialog.transient(parent)
+        dialog.grab_set()
+        dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        main_frame = CTkFrame(dialog, fg_color=PANEL_BG, corner_radius=12)
+        main_frame.pack(fill="both", expand=True, padx=16, pady=16)
+
+        # Header bar
+        header = CTkFrame(main_frame, fg_color=TOPBAR, corner_radius=10)
+        header.pack(fill="x", padx=8, pady=(8, 4))
+
+        CTkLabel(
+            header,
+            text="Scanning in progress",
+            font=("Poppins", 16, "bold"),
+            text_color=WHITE
+        ).pack(side="left", padx=12, pady=8)
+
+        CTkLabel(
+            header,
+            text="SCANNER",
+            font=("Poppins", 11, "bold"),
+            text_color=TOPBAR,
+            fg_color=LIGHT_TEXT,
+            corner_radius=999,
+            padx=10,
+            pady=4,
+        ).pack(side="right", padx=12, pady=8)
+
+        # Body
+        body = CTkFrame(main_frame, fg_color=WHITE, corner_radius=10)
+        body.pack(fill="both", expand=False, padx=8, pady=(4, 8))
+
+        CTkLabel(
+            body,
+            text=(
+                "Please wait while the documents are being scanned and processed.\n"
+                "This may take a few moments depending on the number of pages.\n\n"
+                "Do not close the application during this process."
+            ),
+            font=("Poppins", 12),
+            text_color="#333333",
+            justify="left",
+        ).pack(anchor="w", padx=12, pady=(12, 8))
+
+        # Progress bar (fake/indeterminate style)
+        bar_frame = CTkFrame(body, fg_color="transparent")
+        bar_frame.pack(fill="x", padx=12, pady=(0, 12))
+
+        progress = CTkProgressBar(bar_frame, height=10, corner_radius=5)
+        progress.pack(fill="x")
+        progress.set(0.3)  # static, just to give visual feedback
+
+        # Footer
+        footer = CTkFrame(main_frame, fg_color=PANEL_BG)
+        footer.pack(fill="x", padx=8, pady=(0, 8))
+
+        CTkLabel(
+            footer,
+            text="Scanning… please wait",
+            font=("Poppins", 11, "italic"),
+            text_color="#6B7280",
+        ).pack(side="right", padx=8, pady=4)
+
+        # Center dialog over parent
+        dialog.update_idletasks()
+        w = dialog.winfo_width()
+        h = dialog.winfo_height()
+        if w < 420:
+            w = 420
+        if h < 220:
+            h = 220
+        dialog.minsize(w, h)
+
+        x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (w // 2)
+        y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (h // 2)
+        dialog.geometry(f"{w}x{h}+{x}+{y}")
+
+        # keep reference so we can close later
+        self.scan_dialog = dialog
+
 
 
     # ---------------- UI BUILDERS ---------------- #
@@ -466,32 +658,28 @@ class ScanPage:
         # -------- fast, synchronous validations (before disabling UI) --------
         teacher = (self.teacher_var.get() or "").strip()
         if not teacher or teacher in ("Loading...", "No teachers found"):
-            messagebox.showwarning("Select Teacher", "Please select a teacher first.")
+            self._show_validation_dialog(
+                "Select Teacher",
+                "Please select a teacher before starting the scan.",
+                badge_text="Warning"
+            )
             return
 
         label = self.subject_var.get() if hasattr(self, "subject_var") else ""
         subj_code = self.subject_code_by_label.get(label, "")
         if not subj_code:
-            messagebox.showwarning("Select Subject", "Please select a subject for this scan.")
+            self._show_validation_dialog(
+                "Select Subject",
+                "Please select a subject for this scan.",
+                badge_text="Warning"
+            )
             return
 
-        # -------- disable controls + show "wait" popup --------
+        # -------- disable controls + show custom 'scanning in progress' dialog --------
         self.set_controls_state("disabled")
         set_sidebar_state("disabled")
 
-        self.wait_popup = CTkToplevel(self.master)
-        self.wait_popup.title("Please Wait")
-
-        popup_w, popup_h = 300, 120
-        screen_w = self.wait_popup.winfo_screenwidth()
-        screen_h = self.wait_popup.winfo_screenheight()
-        x = (screen_w // 2) - (popup_w // 2)
-        y = (screen_h // 2) - (popup_h // 2)
-        self.wait_popup.geometry(f"{popup_w}x{popup_h}+{x}+{y}")
-        self.wait_popup.resizable(False, False)
-        self.wait_popup.grab_set()
-        CTkLabel(self.wait_popup, text="Scanning in progress...\nPlease wait.",
-                font=("Roboto", 14), text_color="#374151").pack(expand=True, pady=30)
+        self._open_scan_progress_dialog()
 
         # -------- worker thread --------
         def worker():
@@ -551,7 +739,9 @@ class ScanPage:
                         details={"pages_scanned": int(pages), "subject_code": subj_code}
                     )
 
-                    self.status_label.configure(text="Processing complete!" if (results or qc_errors) else "No new documents found.")
+                    self.status_label.configure(
+                        text="Processing complete!" if (results or qc_errors) else "No new documents found."
+                    )
                 else:
                     self.status_label.configure(text="No documents found.")
 
@@ -562,15 +752,20 @@ class ScanPage:
                     pythoncom.CoUninitialize()
                 except Exception:
                     pass
+
                 self.set_controls_state("normal")
                 set_sidebar_state("normal")
+
+                # close custom scan dialog
                 try:
-                    if hasattr(self, "wait_popup") and self.wait_popup.winfo_exists():
-                        self.wait_popup.destroy()
+                    if hasattr(self, "scan_dialog") and self.scan_dialog.winfo_exists():
+                        self.scan_dialog.destroy()
                 except Exception:
                     pass
 
         threading.Thread(target=worker, daemon=True).start()
+
+
 
 
     def scan_existing(self):
