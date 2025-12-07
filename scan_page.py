@@ -738,6 +738,12 @@ class ScanPage:
                 current_label = self.subject_var.get() if hasattr(self, "subject_var") else ""
                 current_code  = self.subject_code_by_label.get(current_label, "")
                 self._save_subject_meta(teacher_root, final_name, current_code)
+                
+                # Add metadata to result_dict for dashboard tracking
+                ay, sem = self._infer_ay_and_sem_from_today()
+                result_dict["subject_code"] = current_code
+                result_dict["academic_year"] = ay
+                result_dict["semester"] = sem
 
             except Exception as e:
                 exists_src = os.path.exists(img_path)

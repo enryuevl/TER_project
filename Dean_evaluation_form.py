@@ -77,6 +77,7 @@ class DeanEvaluationForm:
         self.processed_results = processed_results
         self.rating_vars = {}
         self.teacher_name_to_id = {}
+        self.peer_name_to_id = {}
         self.ctx = ctx
 
         if results_file == "results.pkl" or not os.path.isabs(results_file):
@@ -138,14 +139,63 @@ class DeanEvaluationForm:
             messagebox.showerror("DB Error", str(e))
 
         placeholder = "No teachers found"
-        self.teacher_var = StringVar(value=teacher_list[0] if teacher_list else placeholder)
+        placeholder_peer = "No peers found"
+        self.teacher_var = StringVar(value=placeholder)
+        self.peer_var = StringVar(value=placeholder_peer)
+        
         teacher_dropdown = CTkOptionMenu(
             left, variable=self.teacher_var,
-            values=teacher_list if teacher_list else [placeholder],
+            values=[placeholder] + teacher_list if teacher_list else [placeholder],
             width=280, state=("normal" if teacher_list else "disabled"),
         )
         self._theme_dropdown(teacher_dropdown)
-        teacher_dropdown.pack(padx=16, pady=(0, 12), anchor="w")
+        teacher_dropdown.pack(padx=16, pady=(0, 6), anchor="w")
+
+        # Peer dropdown for evaluating deans from other departments
+        CTkLabel(left, text="Select Peer (Dean)", font=("Roboto", 14, "bold"),
+                 text_color="#691612").pack(anchor="w", padx=16, pady=(12, 6))
+
+        peer_list = []
+        self.peer_name_to_id = {}
+        try:
+            with db.connect() as conn:
+                dept_id = getattr(self.ctx, "department_id", None)
+                if dept_id is not None:
+                    # Get deans from other departments
+                    peer_query = """
+                        SELECT f.id, f.full_name
+                        FROM faculty f
+                        JOIN departments d ON d.dean_id = f.id
+                        WHERE f.is_active = 1
+                          AND d.id != ?
+                        ORDER BY f.full_name
+                    """
+                    rows = conn.execute(peer_query, (dept_id,)).fetchall()
+                    if rows:
+                        self.peer_name_to_id = {full_name: fid for fid, full_name in rows}
+                        peer_list = list(self.peer_name_to_id.keys())
+        except Exception as e:
+            messagebox.showerror("DB Error", str(e))
+
+        peer_dropdown = CTkOptionMenu(
+            left, variable=self.peer_var,
+            values=[placeholder_peer] + peer_list if peer_list else [placeholder_peer],
+            width=280, state=("normal" if peer_list else "disabled"),
+        )
+        self._theme_dropdown(peer_dropdown)
+        peer_dropdown.pack(padx=16, pady=(0, 12), anchor="w")
+
+        # Auto-clear logic: when one dropdown is selected, clear the other
+        def on_teacher_change(*args):
+            if self.teacher_var.get() != placeholder:
+                self.peer_var.set(placeholder_peer)
+        
+        def on_peer_change(*args):
+            if self.peer_var.get() != placeholder_peer:
+                self.teacher_var.set(placeholder)
+        
+        self.teacher_var.trace_add("write", on_teacher_change)
+        self.peer_var.trace_add("write", on_peer_change)
 
         meta = CTkFrame(left, fg_color="#F8F9FA")
         meta.pack(fill="x", padx=16, pady=(0, 12))
@@ -160,7 +210,10 @@ class DeanEvaluationForm:
         btns_primary.pack(fill="x", padx=16, pady=(0, 8))
         CTkButton(btns_primary, text="Save Evaluation", fg_color="#691612",
                   hover_color="#8B1D18", text_color="#FFFFFF",
-                  command=self._save_then_summary).pack(fill="x", pady=4)
+                  command=self._save_evaluation).pack(fill="x", pady=4)
+        CTkButton(btns_primary, text="View Summary", fg_color="#AC5353",
+                  hover_color="#8B1D18", text_color="#FFFFFF",
+                  command=self._open_summary_for_current).pack(fill="x", pady=4)
     
 
         CTkLabel(left, text="Utilities", font=("Roboto", 14, "bold"),
@@ -325,9 +378,22 @@ class DeanEvaluationForm:
 
     # ---------- Save / Load ----------
     def save_dean_rating(self):
-        teacher = (self.teacher_var.get() or "").strip()
-        if not teacher or teacher == "No teachers found":
-            messagebox.showwarning("No Teacher", "Please select a teacher.")
+        # Determine mode based on which dropdown has a selection
+        teacher_selected = (self.teacher_var.get() or "").strip()
+        peer_selected = (self.peer_var.get() or "").strip()
+        placeholder = "No teachers found"
+        placeholder_peer = "No peers found"
+        
+        if peer_selected and peer_selected != placeholder_peer:
+            # Peer evaluation: peer dropdown is selected
+            teacher = peer_selected
+            rater_type = "Peer"
+        elif teacher_selected and teacher_selected != placeholder:
+            # Dean evaluation: faculty dropdown is selected
+            teacher = teacher_selected
+            rater_type = "Dean"
+        else:
+            messagebox.showwarning("No Selection", "Please select either a faculty member or a peer (dean) to evaluate.")
             return
 
         section_map = {
@@ -348,26 +414,54 @@ class DeanEvaluationForm:
                     sectioned_results[section][int(idx)] = 0
 
         self.processed_results.setdefault(teacher, {})
-        overwrote = bool(self.processed_results[teacher].get("Dean"))
+        
+        # For Peer evaluations, append to list (multiple peers can evaluate)
+        # For Dean evaluations, keep single entry (overwrite check)
+        if rater_type == "Peer":
+            if "Peer" not in self.processed_results[teacher]:
+                self.processed_results[teacher]["Peer"] = []
+            # Check if this peer already evaluated
+            existing_peer = any(
+                name == f"peer_dean_{self.ctx.department_id}" 
+                for name, _, *_ in self.processed_results[teacher]["Peer"]
+            )
+            if existing_peer:
+                # Update existing peer evaluation
+                for i, (name, _, *_) in enumerate(self.processed_results[teacher]["Peer"]):
+                    if name == f"peer_dean_{self.ctx.department_id}":
+                        self.processed_results[teacher]["Peer"][i] = (f"peer_dean_{self.ctx.department_id}", sectioned_results)
+                        break
+            else:
+                # Add new peer evaluation
+                self.processed_results[teacher]["Peer"].append((f"peer_dean_{self.ctx.department_id}", sectioned_results))
+            overwrote = existing_peer
+        else:
+            # Dean evaluation: single entry
+            overwrote = bool(self.processed_results[teacher].get("Dean"))
+            self.processed_results[teacher]["Dean"] = [("dean_input", sectioned_results)]
 
-        # Always keep a single Dean entry
-        self.processed_results[teacher]["Dean"] = [("dean_input", sectioned_results)]
         self._save_results()
         # write/update the Excel summary using the shared path
         try:
             self._export_summary_excel(teacher)
         except Exception as _ex:
-            print(f"⚠️ Dean export failed: {_ex}")
-
+            print(f"⚠️ {rater_type} export failed: {_ex}")
 
         if not overwrote:
-            messagebox.showinfo("Saved", f"Dean evaluation for {teacher} saved successfully.")
+            eval_type = "Peer evaluation" if rater_type == "Peer" else "Dean evaluation"
+            messagebox.showinfo("Saved", f"{eval_type} for {teacher} saved successfully.")
             if hasattr(self, "status_label"):
                 self.status_label.configure(text="Saved")
             return
 
-        # Raise when overwriting an existing one
-        raise OverwriteDeanEvaluationError(f"Overwriting existing Dean evaluation for: {teacher}")
+        # Raise when overwriting an existing Dean evaluation
+        if rater_type == "Dean":
+            raise OverwriteDeanEvaluationError(f"Overwriting existing Dean evaluation for: {teacher}")
+        else:
+            # For peer, just show info that it was updated
+            messagebox.showinfo("Updated", f"Peer evaluation for {teacher} has been updated.")
+            if hasattr(self, "status_label"):
+                self.status_label.configure(text="Updated")
 
 
     def _save_results(self):
@@ -390,10 +484,20 @@ class DeanEvaluationForm:
 
     # ---------- Utilities ----------
     def _open_summary_for_current(self):
-        teacher = (self.teacher_var.get() or "").strip()
-        if not teacher or teacher == "No teachers found":
-            messagebox.showwarning("No Teacher", "Please select a teacher first.")
+        # Determine which dropdown has a selection
+        teacher_selected = (self.teacher_var.get() or "").strip()
+        peer_selected = (self.peer_var.get() or "").strip()
+        placeholder = "No teachers found"
+        placeholder_peer = "No peers found"
+        
+        if peer_selected and peer_selected != placeholder_peer:
+            teacher = peer_selected
+        elif teacher_selected and teacher_selected != placeholder:
+            teacher = teacher_selected
+        else:
+            messagebox.showwarning("No Selection", "Please select either a faculty member or a peer (dean) first.")
             return
+        
         self.summary.processed_results = self.processed_results
         self.summary.show(self.master, teacher)
 
@@ -407,13 +511,15 @@ class DeanEvaluationForm:
         if hasattr(self, "status_label"):
             self.status_label.configure(text="Cleared")
 
-    def _save_then_summary(self):
+    def _save_evaluation(self):
+        """Save the evaluation without opening the summary."""
         try:
             self.save_dean_rating()
         except OverwriteDeanEvaluationError as e:
-            messagebox.showerror("Dean Overwrite", str(e))
-        finally:
-            self._open_summary_for_current()
+            # The save already happened, just inform the user it was overwritten
+            messagebox.showwarning("Overwritten", f"The evaluation has been overwritten.\n\n{str(e)}")
+            if hasattr(self, "status_label"):
+                self.status_label.configure(text="Overwritten")
 
     def _export_summary_excel(self, teacher: str):
         if not teacher or teacher == "No teachers found":

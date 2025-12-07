@@ -11,6 +11,7 @@ import subprocess
 import sys
 import pickle
 import datetime
+import json
 
 class HomePage:
     def __init__(self, master):
@@ -503,7 +504,50 @@ class HomePage:
             CTkLabel(row, text=f"{who_txt} ({role_txt}) → {teacher_txt} {rater_txt}",
                     font=("Poppins", 12), text_color="#495057").pack(anchor="w", padx=10, pady=(0, 8))
 
-    # ---------------- HELPERS ----------------
+    # ---------------- HELPERS ---------------- 
+    def _infer_ay_and_sem_from_today(self):
+        """Helper to infer academic year and semester from current date."""
+        now = datetime.datetime.now()
+        y, m = now.year, now.month
+        if 8 <= m <= 12:
+            return f"{y}-{y+1}", "1st"
+        elif 1 <= m <= 6:
+            return f"{y-1}-{y}", "2nd"
+        else:
+            return f"{y-1}-{y}", "Summer"
+    
+    def _get_teacher_department(self, teacher_full_name: str) -> str | None:
+        """Get department name for a teacher."""
+        try:
+            with db.connect() as conn:
+                row = conn.execute("""
+                    SELECT d.name
+                    FROM faculty f
+                    JOIN departments d ON d.id = f.department_id
+                    WHERE f.full_name = ?
+                """, (teacher_full_name,)).fetchone()
+            return row[0] if row else None
+        except Exception:
+            return None
+    
+    def _build_scan_dir(self, teacher_full_name: str) -> str:
+        """Build scan directory path for a teacher (same logic as scan_page)."""
+        dept = self._get_teacher_department(teacher_full_name) or "UnknownDept"
+        ay, sem = self._infer_ay_and_sem_from_today()
+        folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Scan", dept, ay, sem, teacher_full_name)
+        return folder
+    
+    def _load_subject_meta(self, teacher_root: str) -> dict:
+        """Load scan_meta.json file for a teacher."""
+        try:
+            meta_path = os.path.join(teacher_root, "scan_meta.json")
+            if os.path.exists(meta_path):
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return {}
+    
     def _compute_completed_by_subject(self):
         index = {}
 
@@ -582,9 +626,14 @@ class HomePage:
             def norm(s): return (s or "").strip().upper()
 
             # processed_results structure: { teacher: { "Student": [ (fname, result_dict), ... ], ... }, ... }
-            for _teacher, raters in (processed_results or {}).items():
+            for teacher, raters in (processed_results or {}).items():
                 if not isinstance(raters, dict) or "Student" not in raters:
                     continue
+                
+                # Load scan_meta.json for this teacher as fallback
+                teacher_scan_dir = self._build_scan_dir(teacher)
+                scan_meta = self._load_subject_meta(teacher_scan_dir) if teacher else {}
+                
                 for item in raters.get("Student") or []:
                     # accept (fname, result) or plain dict
                     result = None
@@ -596,8 +645,14 @@ class HomePage:
                     else:
                         continue
 
-                    # subject code
+                    # Try to get subject code from result_dict first (new scans have this)
                     subj_code = norm((result or {}).get("subject_code") or (result or {}).get("subject"))
+                    
+                    # If not found, try scan_meta.json file (fallback for existing scans)
+                    if not subj_code and teacher and fname:
+                        subj_code = norm(scan_meta.get(fname, ""))
+                    
+                    # If still not found, try filename regex parsing
                     if not subj_code and isinstance(fname, str):
                         m = re.search(r'\b([A-Za-z]{2,}\s?-?\s?\d{2,3}[A-Za-z]?)\b', fname)
                         if m:
@@ -606,8 +661,14 @@ class HomePage:
                     if not subj_code:
                         continue
 
+                    # Get academic year and semester from result_dict or infer from scan directory
                     ay = (result or {}).get("academic_year") or None
                     sem = (result or {}).get("semester") or None
+                    
+                    # If not in result_dict, infer from scan directory path
+                    if not ay or not sem:
+                        ay, sem = self._infer_ay_and_sem_from_today()
+                    
                     key = (subj_code, (ay or None), (sem or None))
                     index[key] = index.get(key, 0) + 1
 
