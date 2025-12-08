@@ -1,82 +1,156 @@
-import db
+"""
+Standalone tester script to simulate how the QC error dialog
+from the scan page looks, without running the full app.
+"""
 
-def seed_subjects():
-    insert_sql = """
-    INSERT INTO subjects (code, name, year_level, semester, department_id) VALUES
--- 1st Year, 1st Semester
-('IT 100-1', 'Introduction to Computing', 1, '1st', 1),
-('IT 101-1', 'Computer Programming 1', 1, '1st', 1),
-('GEC 1', 'Understanding the Self', 1, '1st', 1),
-('GEC 2', 'Readings in Philippine History', 1, '1st', 1),
-('GEC 3', 'Mathematics in the Modern World', 1, '1st', 1),
-('PATHFIT 1', 'Movement Competency Training', 1, '1st', 1),
-('NSTP 1', 'ROTC/LTS/CWTS', 1, '1st', 1),
-
--- 1st Year, 2nd Semester
-('IT 102-K', 'Computer Programming 2', 1, '2nd', 1),
-('IT 103-I', 'Data Structures and Algorithms', 1, '2nd', 1),
-('IT 104-I', 'Discrete Mathematics', 1, '2nd', 1),
-('GEC 4', 'Purposive Communication', 1, '2nd', 1),
-('GE ELECTIVE 7', 'Art Appreciation', 1, '2nd', 1),
-('GEC 8', 'Environmental Science', 1, '2nd', 1),
-('PATHFIT 2', 'Exercise-based Fitness Activities', 1, '2nd', 1),
-('NSTP 2', 'ROTC/LTS/CWTS', 1, '2nd', 1),
-
--- 2nd Year, 1st Semester
-('IT 105-I', 'Application Development and Emerging Technologies', 2, '1st', 1),
-('IT 106-I', 'Information Management', 2, '1st', 1),
-('IT 107-I', 'Introduction to Human Computer Interaction', 2, '1st', 1),
-('IT 108-I', 'Operating System', 2, '1st', 1),
-('GEC 6', 'Science, Technology, and Society', 2, '1st', 1),
-('GEC 7A', 'Ethics', 2, '1st', 1),
-('GE ELECTIVE 5', 'The Entrepreneurial Mind', 2, '1st', 1),
-('PATHFIT 3', 'Dance / Sports / Martial Arts / Group Exercise / Outdoor and Adventure Activities', 2, '1st', 1),
-
--- 2nd Year, 2nd Semester
-('GEC 9', 'The Contemporary World', 2, '2nd', 1),
-('IT 109-I', 'Fundamentals of Database Systems', 2, '2nd', 1),
-('IT 110-I', 'Computer Architecture and Robotics', 2, '2nd', 1),
-('IT 111-I', 'Integrative Programming and Technologies 1', 2, '2nd', 1),
-('IT 112-I', 'Mobile Applications', 2, '2nd', 1),
-('IT 113-I', 'Information Assurance and Security 1', 2, '2nd', 1),
-('GE ELECTIVE 6', 'Reading Visual Art', 2, '2nd', 1),
-('PATHFIT 4', 'Menu of Dance, Sports, Martial Arts, Group Exercise, Outdoor and Adventure Activities', 2, '2nd', 1),
-
--- 3rd Year, 1st Semester
-('IT 114-1', 'Quantitative Methods (Modeling and Simulation)', 3, '1st', 1),
-('IT 115-I', 'Networking 1', 3, '1st', 1),
-('IT 116-I', 'System Analysis and Design', 3, '1st', 1),
-('IT 117-I', 'System Administration and Maintenance', 3, '1st', 1),
-('IT 118-I', 'Internet of Things', 3, '1st', 1),
-('IT 119-I', 'Data Scalability and Analytics', 3, '1st', 1),
-('GEC 10', 'Ang Buhay at mga Akda ni Rizal', 3, '1st', 1),
-
--- 3rd Year, 2nd Semester
-('IT 120-1', 'Networking 2', 3, '2nd', 1),
-('IT 121-1', 'Capstone Project and Research 1', 3, '2nd', 1),
-('IT 122-1', 'System Integration and Architecture 1', 3, '2nd', 1),
-('IT 123-1', 'Information Assurance and Security 2', 3, '2nd', 1),
-('ITELECT 001-1', 'IT Elective 1', 3, '2nd', 1),
-('ITELECT 002-1', 'IT Elective 2', 3, '2nd', 1),
-
--- 4th Year, 1st Semester
-('ITELECT 003-1', 'IT Elective 3', 4, '1st', 1),
-('ITELECT 004-1', 'IT Elective 4', 4, '1st', 1),
-('IT 124-1', 'Social and Professional Issues in Computing', 4, '1st', 1),
-('IT 125-1', 'Capstone Project and Research 2', 4, '1st', 1),
-('IT 126-1', 'Cyber Security and Principle', 4, '1st', 1),
-('IT 127-1', 'Global Professional Practice', 4, '1st', 1),
-
--- 4th Year, 2nd Semester
-('IT 128-1', 'Practicum', 4, '2nd', 1);
+from customtkinter import (
+    CTk,
+    CTkFrame,
+    CTkToplevel,
+    CTkLabel,
+    CTkScrollableFrame,
+    CTkButton,
+)
 
 
-
+def show_qc_error_dialog(parent, qc_errors):
     """
-    with db.connect() as conn:
-        conn.executescript(insert_sql)
-        conn.commit()
-        print("✅ Subjects inserted successfully!")
+    Local copy of the ScanPage QC error dialog UI, so we can
+    preview it without importing the full ScanPage class.
+    """
+    TOPBAR = "#BF3131"
+    SIDEBAR_BTN = "#AC5353"
+    HOVER = "#BF3131"
+    PANEL_BG = "#F5F5F5"
+    LIGHT_TEXT = "#FFEFEF"
+    WHITE = "#FFFFFF"
+
+    # --- Dialog Window ---
+    dialog = CTkToplevel(parent)
+    dialog.title("QC Errors Detected")
+    dialog.geometry("560x360")
+    dialog.resizable(False, False)
+
+    dialog.transient(parent)
+    dialog.grab_set()
+
+    # --- Main container ---
+    main_frame = CTkFrame(dialog, fg_color=PANEL_BG, corner_radius=12)
+    main_frame.pack(fill="both", expand=True, padx=16, pady=16)
+
+    # --- Header bar ---
+    header = CTkFrame(main_frame, fg_color=TOPBAR, corner_radius=10)
+    header.pack(fill="x", padx=8, pady=(8, 4))
+
+    CTkLabel(
+        header,
+        text="Incomplete / Blank Pages Detected",
+        font=("Poppins", 16, "bold"),
+        text_color=WHITE,
+    ).pack(side="left", padx=12, pady=8)
+
+    CTkLabel(
+        header,
+        text="ERROR",
+        font=("Poppins", 11, "bold"),
+        text_color=TOPBAR,
+        fg_color=LIGHT_TEXT,
+        corner_radius=999,
+        padx=10,
+        pady=4,
+    ).pack(side="right", padx=12, pady=8)
+
+    # --- Body ---
+    body = CTkFrame(main_frame, fg_color=WHITE, corner_radius=10)
+    body.pack(fill="both", expand=True, padx=8, pady=(4, 8))
+
+    CTkLabel(
+        body,
+        text=(
+            "The following documents have missing keys and were discarded.\n"
+            "Please rescan these page(s):"
+        ),
+        font=("Poppins", 12),
+        text_color="#333333",
+        justify="left",
+    ).pack(anchor="w", padx=12, pady=(10, 6))
+
+    # --- Scrollable list of errors ---
+    list_frame = CTkScrollableFrame(
+        body,
+        fg_color=PANEL_BG,
+        corner_radius=8,
+        height=160,
+    )
+    list_frame.pack(fill="both", expand=True, padx=12, pady=(0, 10))
+
+    if qc_errors:
+        for fname, reason in qc_errors:
+            CTkLabel(
+                list_frame,
+                text=f"• {fname} → {reason}",
+                font=("Poppins", 11),
+                text_color="#333333",
+                anchor="w",
+                justify="left",
+            ).pack(fill="x", pady=2)
+    else:
+        CTkLabel(
+            list_frame,
+            text="No details available.",
+            font=("Poppins", 11, "italic"),
+            text_color="#555555",
+        ).pack(pady=10)
+
+    # --- Footer buttons ---
+    footer = CTkFrame(main_frame, fg_color=PANEL_BG)
+    footer.pack(fill="x", padx=8, pady=(0, 8))
+
+    def close_dialog():
+        dialog.destroy()
+
+    CTkButton(
+        footer,
+        text="OK, I will rescan",
+        font=("Poppins", 12, "bold"),
+        fg_color=SIDEBAR_BTN,
+        hover_color=HOVER,
+        text_color=WHITE,
+        corner_radius=8,
+        width=150,
+        command=close_dialog,
+    ).pack(side="right", padx=12, pady=4)
+
+    # Center relative to parent
+    dialog.update_idletasks()
+    x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (dialog.winfo_width() // 2)
+    y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (dialog.winfo_height() // 2)
+    dialog.geometry(f"+{x}+{y}")
+
+    dialog.wait_window(dialog)
+
+
+def main():
+    app = CTk()
+    app.title("QC Error Dialog Preview")
+    app.geometry("900x600")
+
+    container = CTkFrame(app)
+    container.pack(fill="both", expand=True, padx=20, pady=20)
+
+    qc_errors = [
+        ("SCAN_001.png", "Missing faculty signature"),
+        ("SCAN_002.png", "Answer sheet too faint / not detected"),
+        ("SCAN_003.png", "Blank page detected"),
+    ]
+
+    # Show dialog on startup
+    app.after(100, lambda: show_qc_error_dialog(container, qc_errors))
+
+    app.mainloop()
+
 
 if __name__ == "__main__":
-    seed_subjects()
+    main()
+
+

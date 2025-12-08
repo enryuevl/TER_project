@@ -375,13 +375,21 @@ class SummaryFormController:
         for i, h in enumerate(headers):
             ctk.CTkLabel(beh, text=h, font=("Poppins", 12, "bold"), text_color="#1F2937").grid(row=1, column=i, padx=5, pady=2)
 
-        add_behavior_row(beh, 2, "1. Courtesy",                      "7.5%", key="courtesy")
-        add_behavior_row(beh, 3, "2. Human Relations",               "7.5%", key="human_relations")
-        add_behavior_row(beh, 4, "3. Punctuality and Attendance",    "7.5%", key="punctuality")
-        add_behavior_row(beh, 5, "4. Initiative",                    "7.5%", key="initiative")
-        # ⬇these two now depend on is_dean
-        add_behavior_row(beh, 6, "5. Leadership (Supervisors only)", "5%",   key="leadership",        include_in_calc=is_dean)
-        add_behavior_row(beh, 7, "6. Stress Tolerance (Supervisors only)", "5%", key="stress_tolerance", include_in_calc=is_dean)
+        # Adjust percentages based on whether teacher is a dean
+        if is_dean:
+            # When evaluating a dean: all 6 criteria at 5% each = 30%
+            add_behavior_row(beh, 2, "1. Courtesy",                      "5%", key="courtesy")
+            add_behavior_row(beh, 3, "2. Human Relations",               "5%", key="human_relations")
+            add_behavior_row(beh, 4, "3. Punctuality and Attendance",    "5%", key="punctuality")
+            add_behavior_row(beh, 5, "4. Initiative",                    "5%", key="initiative")
+            add_behavior_row(beh, 6, "5. Leadership (Supervisors only)", "5%", key="leadership", include_in_calc=True)
+            add_behavior_row(beh, 7, "6. Stress Tolerance (Supervisors only)", "5%", key="stress_tolerance", include_in_calc=True)
+        else:
+            # When evaluating regular faculty: 4 criteria at 7.5% each = 30%
+            add_behavior_row(beh, 2, "1. Courtesy",                      "7.5%", key="courtesy")
+            add_behavior_row(beh, 3, "2. Human Relations",               "7.5%", key="human_relations")
+            add_behavior_row(beh, 4, "3. Punctuality and Attendance",    "7.5%", key="punctuality")
+            add_behavior_row(beh, 5, "4. Initiative",                    "7.5%", key="initiative")
 
 
         # Plus Factor

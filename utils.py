@@ -1,9 +1,20 @@
 import cv2
 import numpy as np
+import os, re
+import db
 
-import cv2
-import numpy as np
 
+# --- Current user context for logging ----------------------------------------
+CURRENT_USER = {"name": None, "role": None, "department_id": None}
+
+def set_current_user(name: str | None, role: str | None, department_id: int | None = None):
+    global CURRENT_USER
+    CURRENT_USER = {"name": name, "role": role, "department_id": department_id}
+
+def get_current_user():
+    return CURRENT_USER
+
+# --- Line and shaded area detection utilities ---------------------------------
 def detect_vertical_lines(section_img, section_name="Section"):
     """
     Process the section image to detect vertical lines.
@@ -171,3 +182,15 @@ def set_sidebar_state(state="normal"):
             btn.configure(state=state)
         except Exception:
             pass
+
+# --- Summary export naming helpers ---
+
+def build_summary_filename(teacher: str, ay: str, sem: str) -> str:
+    # remove illegal filename chars and trailing dots/spaces
+    safe_teacher = re.sub(r'[<>:"/\\|?*]+', '-', (teacher or '')).strip().strip('.')
+    return f"{safe_teacher} - Summary_{ay}_{sem}.xlsx"
+
+def get_summary_export_path(teacher: str, ay: str, sem: str, base_dir: str | None = None) -> str:
+    if base_dir is None:
+        base_dir = os.path.dirname(db.get_default_db_path())
+    return os.path.join(base_dir, build_summary_filename(teacher, ay, sem))
