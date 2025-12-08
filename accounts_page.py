@@ -1746,7 +1746,11 @@ class AccountsDatabasePage:
         path = vals[3]
         try:
             if os.path.exists(path):
-                os.startfile(os.path.dirname(path))
+                # Prefer the scans subfolder inside the archive semester root
+                base_dir = os.path.dirname(path)
+                scans_dir = os.path.join(base_dir, "scans")
+                target = scans_dir if os.path.exists(scans_dir) else base_dir
+                os.startfile(target)
             else:
                 messagebox.showwarning("Missing File", f"Path not found:\n{path}")
         except Exception:
