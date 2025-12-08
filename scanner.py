@@ -60,13 +60,39 @@ class WIAScanner:
         return os.path.join(self.batch_dir, name)
 
     # ---------- wia ----------
-    def initialize(self):
-        """Initialize WIA and connect to the first available scanner"""
+    def list_devices(self):
+        """Return a list of available scanner names."""
+        wia_manager = Dispatch("WIA.DeviceManager")
+        devices = wia_manager.DeviceInfos
+        names = []
+        for i in range(1, devices.Count + 1):
+            try:
+                names.append(devices.Item(i).Properties("Name").Value)
+            except Exception:
+                continue
+        return names
+
+    def initialize(self, device_name: str | None = None):
+        """Initialize WIA and connect to the selected scanner (or first available)."""
         wia_manager = Dispatch("WIA.DeviceManager")
         devices = wia_manager.DeviceInfos
         if devices.Count == 0:
             raise Exception("No scanner detected.")
-        self.device = devices.Item(1)
+        chosen = None
+        if device_name:
+            target = (device_name or "").lower().strip()
+            for i in range(1, devices.Count + 1):
+                try:
+                    info = devices.Item(i)
+                    name = info.Properties("Name").Value
+                    if name and name.lower().strip() == target:
+                        chosen = info
+                        break
+                except Exception:
+                    continue
+        if chosen is None:
+            chosen = devices.Item(1)
+        self.device = chosen
         return self._get_scanner_info()
 
     def _get_scanner_info(self):

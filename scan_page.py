@@ -24,6 +24,7 @@ class ScanPage:
         self.last_processed_times = {}
         self.annotated_cache = {}  # Cache for annotated images
         self.current_scan_dir = None
+        self.scanner = None
         self.load_results()
         # call summary controller
         from summary_helpers import SummaryFormController
@@ -425,7 +426,8 @@ class ScanPage:
         # Try to get available scanner names (adjust list_devices() to your WIAScanner API)
         devices = []
         try:
-            if hasattr(self, "scanner") and hasattr(self.scanner, "list_devices"):
+            self.scanner = self.scanner or WIAScanner()
+            if hasattr(self.scanner, "list_devices"):
                 devices = self.scanner.list_devices() or []
         except Exception:
             devices = []
@@ -688,6 +690,7 @@ class ScanPage:
 
                 # cache current selections for the thread
                 rater = self.rater_var.get() if hasattr(self, "rater_var") else "Student"
+                selected_scanner = self.scanner_var.get() if hasattr(self, "scanner_var") else None
 
                 self.current_scan_dir = self._build_scan_dir(teacher)
 
@@ -705,7 +708,7 @@ class ScanPage:
 
                 # scan
                 scanner = WIAScanner(teacher_name=teacher, output_dir=self.current_scan_dir)
-                info = scanner.initialize()
+                info = scanner.initialize(device_name=selected_scanner)
                 self.status_label.configure(text=f"Scanner detected: {info['name']}")
                 scanner.create_batch_dir()
                 pages, batch_dir = scanner.scan_batch()
