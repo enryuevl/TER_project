@@ -266,6 +266,25 @@ BEGIN
 END;
 
 
+-- =========================
+-- 8) Archives (per Department/AY/Sem)
+-- =========================
+CREATE TABLE IF NOT EXISTS archives (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  department_id INTEGER NOT NULL,
+  academic_year TEXT NOT NULL,
+  semester      TEXT NOT NULL CHECK (semester IN ('1st','2nd','Summer')),
+  archive_path  TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  created_by    TEXT NOT NULL,
+  notes         TEXT,
+  UNIQUE(department_id, academic_year, semester),
+  FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS ix_archives_dept_term ON archives(department_id, academic_year, semester);
+
+
 """
 
 
@@ -309,6 +328,24 @@ def _ensure_activity_logs(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS ix_logs_teacher ON activity_logs(teacher_name)")
     conn.commit()
 
+def _ensure_archives(conn: sqlite3.Connection) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS archives (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            department_id INTEGER NOT NULL,
+            academic_year TEXT NOT NULL,
+            semester      TEXT NOT NULL CHECK (semester IN ('1st','2nd','Summer')),
+            archive_path  TEXT NOT NULL,
+            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            created_by    TEXT NOT NULL,
+            notes         TEXT,
+            UNIQUE(department_id, academic_year, semester),
+            FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_archives_dept_term ON archives(department_id, academic_year, semester)")
+    conn.commit()
+
 def log_activity(
     action: str,
     actor_name: str | None = None,
@@ -348,6 +385,42 @@ def fetch_activity_logs(limit: int = 200, where: str = "", params: tuple = ()):
         rows = conn.execute(q, params + (limit,)).fetchall()
     return rows
 
+def insert_archive_record(department_id: int, academic_year: str, semester: str, archive_path: str, created_by: str, notes: str | None = None):
+    with connect() as conn:
+        conn.execute("""
+            INSERT INTO archives (department_id, academic_year, semester, archive_path, created_by, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (department_id, academic_year, semester, archive_path, created_by, notes))
+        conn.commit()
+
+def get_archive_if_exists(department_id: int, academic_year: str, semester: str):
+    with connect() as conn:
+        row = conn.execute("""
+            SELECT id, archive_path, created_at, created_by, notes
+            FROM archives
+            WHERE department_id=? AND academic_year=? AND semester=?
+        """, (department_id, academic_year, semester)).fetchone()
+    return row
+
+def fetch_archives(department_id: int | None = None, academic_year: str | None = None, semester: str | None = None):
+    where = []
+    params: list = []
+    if department_id is not None:
+        where.append("department_id = ?"); params.append(department_id)
+    if academic_year:
+        where.append("academic_year = ?"); params.append(academic_year)
+    if semester:
+        where.append("semester = ?"); params.append(semester)
+
+    sql = "SELECT id, department_id, academic_year, semester, archive_path, created_at, created_by, COALESCE(notes,'') FROM archives"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY academic_year DESC, semester DESC, created_at DESC"
+
+    with connect() as conn:
+        rows = conn.execute(sql, tuple(params)).fetchall()
+    return rows
+
 
 def migrate_to_current_schema(conn: sqlite3.Connection) -> None:
     # 1) subjects: ensure 'title' exists (copy from legacy 'name' if present)
@@ -376,6 +449,12 @@ def migrate_to_current_schema(conn: sqlite3.Connection) -> None:
         _ensure_activity_logs(conn)
     except NameError:
         pass  # helper not defined yet – safe to ignore
+
+    # 3b) archives table (idempotent)
+    try:
+        _ensure_archives(conn)
+    except NameError:
+        pass
 
     # 4) Curriculum schema – idempotent (safe to call every startup)
     conn.executescript(

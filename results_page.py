@@ -540,8 +540,26 @@ class ResultsPage:
         Zip a selected semester folder (department > academic year > semester > profs)
         and store to: Archived > department > academic year > <semester>_<timestamp>.zip
         """
+        # Prefill the dialog to the Scan/<Dept> root to save clicks
+        try:
+            base_dir = Path(os.path.join(os.path.expanduser("~"), "Documents", "MyWork"))
+            scan_root = base_dir / "Scan"
+            initial_dir = scan_root
+            user = utils.get_current_user()
+            dept_id = user.get("department_id") if isinstance(user, dict) else None
+            if dept_id is not None:
+                with db.connect() as conn:
+                    row = conn.execute("SELECT name FROM departments WHERE id=?", (dept_id,)).fetchone()
+                if row and row[0]:
+                    candidate = scan_root / row[0]
+                    if candidate.exists():
+                        initial_dir = candidate
+        except Exception:
+            initial_dir = None
+
         semester_dir = filedialog.askdirectory(
-            title="Select the SEMESTER folder to archive (e.g., .../Department/2025-2026/1st)"
+            title="Select the SEMESTER folder to archive (e.g., .../Department/2025-2026/1st)",
+            initialdir=str(initial_dir) if initial_dir else None,
         )
         if not semester_dir:
             return

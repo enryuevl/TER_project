@@ -6,6 +6,8 @@ import datetime
 from db import backup_all
 import shutil
 import os
+import archiving
+import utils
 
 # curriculum_page lives in the same folder as this file
 try:
@@ -32,6 +34,10 @@ class AccountsDatabasePage:
         # Treat both operator and dean as department-scoped users
         return (self.ctx.role or "").lower() in ("operator", "dean") \
             and self.ctx.department_id is not None
+
+    def _can_archive(self) -> bool:
+        role = (self.ctx.role or "").lower()
+        return role in ("admin", "dean")
 
     def _dept_param(self):
         return (self.ctx.department_id,)  # convenience tuple for SQL params
@@ -67,7 +73,7 @@ class AccountsDatabasePage:
         self.controls_frame.pack(fill="x", pady=(10, 0))
 
         # Tab buttons
-        for i, entity in enumerate(["Faculty", "Departments","Programs","Subjects", "Blocks", "Teaching Assignments", "Curriculum"]):
+        for i, entity in enumerate(["Faculty", "Departments","Programs","Subjects", "Blocks", "Teaching Assignments", "Curriculum", "Archives"]):
             btn = CTkButton(
                 self.tab_frame, text=entity,
                 command=lambda e=entity: self.show_tab(e),
@@ -148,6 +154,7 @@ class AccountsDatabasePage:
             "Blocks": self.show_blocks_table,
             "Teaching Assignments": self.show_teaching_assignments_table,
             "Curriculum": self.show_curriculum_tab,
+            "Archives": self.show_archives_tab,
             
         }
 
@@ -159,6 +166,10 @@ class AccountsDatabasePage:
         # hide controls for these tabs
         if name in ("Curriculum", "Curriculum Table"):
             return  # nothing else to add here
+
+        if name == "Archives":
+            self._build_archive_controls()
+            return
 
         
             
@@ -1566,6 +1577,180 @@ class AccountsDatabasePage:
         ay = t if len(t) == 9 and t[0:4].isdigit() and t[4] == '-' and t[5:9].isdigit() else None
         sem = t.capitalize() if t.lower() in ("1st","2nd","summer") else None
         return ay, sem
+
+    # ---------------- Archives Tab ---------------- #
+    def show_archives_tab(self, container, _search_entry):
+        filter_row = CTkFrame(container, fg_color="transparent")
+        filter_row.pack(fill="x", padx=20, pady=(10, 6))
+
+        self.archive_dept_var = StringVar()
+        self._archive_dept_map = {}
+        dept_values = ["No Departments"]
+        try:
+            with db.connect() as conn:
+                rows = conn.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
+            self._archive_dept_map = {name: did for did, name in rows}
+            dept_values = [r[1] for r in rows] or dept_values
+        except Exception:
+            pass
+
+        if not self._can_archive() and self.ctx.department_id is not None:
+            dept_values = [name for name, did in self._archive_dept_map.items() if did == self.ctx.department_id] or dept_values
+
+        CTkLabel(filter_row, text="Department", font=("Poppins", 12, "bold"), text_color="#691612").pack(side="left", padx=(0, 6))
+        self.archive_dept_menu = CTkOptionMenu(
+            filter_row,
+            variable=self.archive_dept_var,
+            values=dept_values,
+            fg_color="#BF3131",
+            button_color="#691612",
+            button_hover_color="#8E1616",
+            text_color="#FFFFFF",
+            dropdown_fg_color="#FFFFFF",
+            dropdown_text_color="#333333",
+            dropdown_hover_color="#F3D0D0",
+            width=200,
+            state="normal" if self._can_archive() else ("disabled" if len(dept_values) <= 1 else "normal"),
+        )
+        self.archive_dept_menu.pack(side="left", padx=(0, 12))
+        if dept_values:
+            self.archive_dept_var.set(dept_values[0])
+
+        now = datetime.datetime.now()
+        default_sem = "1st" if 8 <= now.month <= 12 else ("2nd" if 1 <= now.month <= 6 else "Summer")
+        default_ay = f"{now.year}-{now.year+1}" if default_sem == "1st" else f"{now.year-1}-{now.year}"
+
+        CTkLabel(filter_row, text="Academic Year", font=("Poppins", 12, "bold"), text_color="#691612").pack(side="left", padx=(0, 6))
+        self.archive_ay_entry = CTkEntry(filter_row, width=140)
+        self.archive_ay_entry.pack(side="left", padx=(0, 12))
+        self.archive_ay_entry.insert(0, default_ay)
+
+        CTkLabel(filter_row, text="Semester", font=("Poppins", 12, "bold"), text_color="#691612").pack(side="left", padx=(0, 6))
+        self.archive_sem_var = StringVar(value=default_sem)
+        self.archive_sem_menu = CTkOptionMenu(
+            filter_row,
+            variable=self.archive_sem_var,
+            values=["1st", "2nd", "Summer"],
+            fg_color="#BF3131",
+            button_color="#691612",
+            button_hover_color="#8E1616",
+            text_color="#FFFFFF",
+            dropdown_fg_color="#FFFFFF",
+            dropdown_text_color="#333333",
+            dropdown_hover_color="#F3D0D0",
+            width=120,
+        )
+        self.archive_sem_menu.pack(side="left", padx=(0, 12))
+
+        CTkButton(
+            filter_row,
+            text="Load Archives",
+            fg_color="#AC5353",
+            hover_color="#BF3131",
+            text_color="#FFFFFF",
+            corner_radius=8,
+            command=self._load_archives_table,
+            width=140,
+        ).pack(side="left")
+
+        columns = ("dept", "ay", "sem", "path", "created", "by")
+        headings = ["Department", "AY", "Sem", "Path", "Created", "By"]
+        widths = [180, 110, 70, 320, 150, 120]
+        self._setup_treeview(container, columns, headings, widths)
+        self.archive_tree = self.tree
+        self._load_archives_table()
+
+    def _load_archives_table(self):
+        if not getattr(self, "archive_tree", None):
+            return
+        for i in self.archive_tree.get_children():
+            self.archive_tree.delete(i)
+
+        dept_name = self.archive_dept_var.get()
+        dept_id = self._archive_dept_map.get(dept_name) if dept_name else None
+        if not self._can_archive() and self.ctx.department_id is not None:
+            dept_id = self.ctx.department_id
+
+        ay = (self.archive_ay_entry.get() or "").strip()
+        sem = (self.archive_sem_var.get() or "").strip()
+
+        rows = db.fetch_archives(
+            department_id=dept_id,
+            academic_year=ay if ay else None,
+            semester=sem if sem else None,
+        )
+
+        dept_lookup = {v: k for k, v in getattr(self, "_archive_dept_map", {}).items()}
+        for (arch_id, d_id, ayx, semx, path, created_at, created_by, _notes) in rows:
+            dept_label = dept_lookup.get(d_id, f"Dept {d_id}")
+            self.archive_tree.insert("", "end", iid=str(arch_id), values=(dept_label, ayx, semx, path, created_at, created_by))
+
+    def _build_archive_controls(self):
+        if self._can_archive():
+            CTkButton(
+                self.controls_frame,
+                text="Archive Semester",
+                fg_color="#691612",
+                hover_color="#AC5353",
+                text_color="#FFFFFF",
+                command=self._archive_current_semester,
+            ).pack(side="left", padx=5)
+
+        CTkButton(
+            self.controls_frame,
+            text="Open Archive Location",
+            fg_color="#AC5353",
+            hover_color="#BF3131",
+            text_color="#FFFFFF",
+            command=self._open_selected_archive,
+        ).pack(side="left", padx=5)
+
+    def _archive_current_semester(self):
+        dept_name = self.archive_dept_var.get()
+        dept_id = self._archive_dept_map.get(dept_name) if dept_name else self.ctx.department_id
+        ay = (self.archive_ay_entry.get() or "").strip()
+        sem = (self.archive_sem_var.get() or "").strip()
+        if not dept_id or not ay or not sem:
+            messagebox.showwarning("Missing Info", "Please provide Department, Academic Year, and Semester.")
+            return
+        try:
+            user = utils.get_current_user()
+            zip_path, archive_root = archiving.create_archive_for_semester(
+                department_id=dept_id,
+                academic_year=ay,
+                semester=sem,
+                created_by=user.get("name") if user else "Unknown",
+            )
+            messagebox.showinfo("Archive Created", f"Archive saved at:\n{zip_path}")
+            self._load_archives_table()
+            try:
+                scans_folder = os.path.join(archive_root, "scans")
+                target = scans_folder if os.path.exists(scans_folder) else archive_root
+                os.startfile(target)
+            except Exception:
+                pass
+        except Exception as e:
+            messagebox.showerror("Archive Error", str(e))
+
+    def _open_selected_archive(self):
+        if not getattr(self, "archive_tree", None):
+            return
+        sel = self.archive_tree.selection()
+        if not sel:
+            messagebox.showwarning("No Selection", "Please select an archive entry.")
+            return
+        item = self.archive_tree.item(sel[0])
+        vals = item.get("values", [])
+        if len(vals) < 4:
+            return
+        path = vals[3]
+        try:
+            if os.path.exists(path):
+                os.startfile(os.path.dirname(path))
+            else:
+                messagebox.showwarning("Missing File", f"Path not found:\n{path}")
+        except Exception:
+            messagebox.showerror("Open Error", "Could not open archive location.")
 
     # ---------------- Backup / Restore ---------------- #
     #backup function

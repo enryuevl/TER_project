@@ -330,6 +330,18 @@ class DeanEvaluationForm:
         else:
             return f"{y-1}-{y}", "Summer"
 
+    def _get_department_of_faculty(self, full_name: str) -> int | None:
+        try:
+            with db.connect() as conn:
+                row = conn.execute("""
+                    SELECT department_id
+                    FROM faculty
+                    WHERE full_name = ?
+                """, (full_name,)).fetchone()
+            return row[0] if row else None
+        except Exception:
+            return None
+
     # ---------- grid builder ----------
     def _build_evaluation_grid(self, parent):
         legend = CTkFrame(parent, fg_color="#FFFFFF")
@@ -583,6 +595,7 @@ class DeanEvaluationForm:
             # Peer evaluation: peer dropdown is selected
             teacher = peer_selected
             rater_type = "Peer"
+            peer_dept_id = self._get_department_of_faculty(teacher)
         elif teacher_selected and teacher_selected != placeholder:
             # Dean evaluation: faculty dropdown is selected
             teacher = teacher_selected
@@ -617,18 +630,18 @@ class DeanEvaluationForm:
                 self.processed_results[teacher]["Peer"] = []
             # Check if this peer already evaluated
             existing_peer = any(
-                name == f"peer_dean_{self.ctx.department_id}" 
+                name == f"peer_dean_{peer_dept_id or self.ctx.department_id}" 
                 for name, _, *_ in self.processed_results[teacher]["Peer"]
             )
             if existing_peer:
                 # Update existing peer evaluation
                 for i, (name, _, *_) in enumerate(self.processed_results[teacher]["Peer"]):
-                    if name == f"peer_dean_{self.ctx.department_id}":
-                        self.processed_results[teacher]["Peer"][i] = (f"peer_dean_{self.ctx.department_id}", sectioned_results)
+                    if name == f"peer_dean_{peer_dept_id or self.ctx.department_id}":
+                        self.processed_results[teacher]["Peer"][i] = (f"peer_dean_{peer_dept_id or self.ctx.department_id}", sectioned_results)
                         break
             else:
                 # Add new peer evaluation
-                self.processed_results[teacher]["Peer"].append((f"peer_dean_{self.ctx.department_id}", sectioned_results))
+                self.processed_results[teacher]["Peer"].append((f"peer_dean_{peer_dept_id or self.ctx.department_id}", sectioned_results))
             overwrote = existing_peer
         else:
             # Dean evaluation: single entry
