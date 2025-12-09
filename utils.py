@@ -156,12 +156,16 @@ def detect_shaded_areas_connected(section_img, section_name="Section", fill_thre
         area = stats[i, cv2.CC_STAT_AREA]
         x = int(centroids[i][0])
         y = int(centroids[i][1])
-        
+
         # Stricter size filtering
         if 80 < area < 400:  # Narrowed range to reduce false positives
-            # Filter shape
-        
-            perimeter = cv2.arcLength(cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0][i-1], True)
+            # Build a mask for the current component to obtain the correct contour.
+            component_mask = (labels == i).astype("uint8")
+            contours, _ = cv2.findContours(component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                continue
+
+            perimeter = cv2.arcLength(contours[0], True)
             if perimeter > 0:
                 circularity = 4 * np.pi * area / (perimeter * perimeter)
                 if circularity > 0.6:  # Only keep roughly circular shapes

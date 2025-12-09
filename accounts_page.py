@@ -181,11 +181,11 @@ class AccountsDatabasePage:
         ]:
             CTkButton(
                 self.controls_frame,
-                text=f"{label} {name[:0]}",
+                text=f"{label} {name}",
                 fg_color=color,
                 hover_color="#8B1D18",   # Dark Red hover
                 text_color="#FFFFFF",
-                command=(lambda l=label: self._handle_control(name, l.lower()))
+                command=(lambda l=label, e=name: self._handle_control(e, l.lower()))
             ).pack(side="left", padx=5)
 
     def _handle_control(self, entity, action):

@@ -763,26 +763,36 @@ class DeanEvaluationForm:
                 template_path
             )  # returns the file it saved
 
-        # 3) Move/rename to your unified naming/location so ScanPage & Dean match
+        # If export_full_summary already saved under Summaries, keep it there
+        if save_path and os.path.exists(save_path):
+            return save_path
+
+        # Fallback writer: place file in the same nested Summaries structure
         try:
-            from utils import get_summary_export_path
+            from summary_helpers import _safe_filename
+        except Exception:
+            def _safe_filename(name: str) -> str:  # pragma: no cover
+                import re
+                name = re.sub(r'[\\/:*?"<>|]+', "", name or "")
+                name = re.sub(r"\\s+", " ", name).strip()
+                return name
 
-            ay, sem = self._infer_ay_and_sem_from_today()
-            target_path = get_summary_export_path(teacher, ay, sem)
+        dept_name = ""
+        try:
+            dept_name = self.summary.get_department_for_teacher(teacher) or ""
+        except Exception:
+            dept_name = ""
 
-            if save_path and os.path.exists(save_path):
-                # ensure target dir exists
-                os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                import shutil
+        base_root = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Summaries")
+        safe_dept = _safe_filename(dept_name or "UnknownDept")
+        safe_teacher = _safe_filename(teacher or "Unknown Teacher")
+        safe_ay = _safe_filename(ay)
+        safe_sem = _safe_filename(sem)
 
-                # replace/overwrite to keep single source of truth
-                try:
-                    os.replace(save_path, target_path)
-                except Exception:
-                    shutil.copyfile(save_path, target_path)
-            else:
-                # If helper didn’t produce a file, fall back to simple writer
-                include_raters = ("Student", "Peer", "Self", "Dean")
-                self._fallback_write_excel(target_path, teacher, include_raters)
-        except Exception as e:
-            print(f"⚠️ Dean export normalization failed: {e}")
+        target_dir = os.path.join(base_root, safe_dept, safe_ay, safe_sem, safe_teacher)
+        os.makedirs(target_dir, exist_ok=True)
+        target_path = os.path.join(target_dir, f"{safe_teacher}, {safe_ay}, {safe_sem}.xlsx")
+
+        include_raters = ("Student", "Peer", "Self", "Dean")
+        self._fallback_write_excel(target_path, teacher, include_raters)
+        return target_path
