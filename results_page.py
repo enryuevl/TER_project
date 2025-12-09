@@ -19,12 +19,14 @@ from summary_helpers import SummaryFormController, protect_workbook_file   # <--
 class ResultsPage:
     def __init__(self, master, processed_results):
         self.master = master
-        self.processed_results = processed_results
+        # Respect caller-provided results; only load from disk when none given
+        if processed_results is None:
+            self.processed_results = self.load_results()
+        else:
+            self.processed_results = processed_results
         self.current_teacher = None
         self.tab_buttons = {}
 
-        # Load results from pickle
-        self.load_results()
         # Prepare shared Summary controller (module)
         self.summary = SummaryFormController(self.processed_results, db_module=db)
 
@@ -396,8 +398,8 @@ class ResultsPage:
             foreground=[("hover", "#FFFFFF")]
         )
 
-        self.tree.tag_configure("oddrow", background="#F3F4F6", foreground="#1F2937")
-        self.tree.tag_configure("evenrow", background="#F3F4F6", foreground="#1F2937")
+        self.tree.tag_configure("oddrow", background="#F9FAFB", foreground="#1F2937")
+        self.tree.tag_configure("evenrow", background="#E5E7EB", foreground="#1F2937")
         self.tree.tag_configure(
             "section",
             background="#BF3131",
@@ -502,7 +504,7 @@ class ResultsPage:
             save_path = self.summary.export_full_summary("template.xlsx")
             if save_path:
                 protect_workbook_file(save_path)
-                messagebox.showinfo("Saved", f"✅ Summary updated:\n{save_path}")
+                messagebox.showinfo("Saved", f"Summary updated:\n{save_path}")
 
                 # Activity log (kept from your original export)
                 user = utils.get_current_user()
@@ -574,110 +576,156 @@ class ResultsPage:
             messagebox.showerror("Open Folder Failed", str(ex))
 
     def _create_final_summary(self):
-        """Aggregate teacher summaries into final_summary.xlsx for the current dept/AY/Sem."""
-        target_dir = self._get_summary_folder()
-        if target_dir is None:
+        """Directly generate the final summary for the current dept/AY/Sem."""
+        target = self._get_summary_folder()
+        if target is None:
             messagebox.showwarning("Missing Department", "Cannot determine your department.")
             return
-        if not target_dir.exists():
-            messagebox.showwarning("Not Found", f"Folder not found:\n{target_dir}")
-            return
-
-        # Collect teacher summary files (skip final_summary.xlsx itself)
-        summary_files = [
-            p for p in target_dir.glob("*.xlsx")
-            if p.name.lower() != "final_summary.xlsx"
-        ]
-        if not summary_files:
-            messagebox.showwarning("No Summaries", "No teacher summaries found in this period.")
-            return
-
-        # Load template or existing final summary
-        template_path = Path("final_summary.xlsx")
-        dest_path = target_dir / "final_summary.xlsx"
-        if dest_path.exists():
-            try:
-                wb = load_workbook(dest_path)
-            except Exception as e:
-                messagebox.showerror("Load Error", f"Could not open existing final_summary.xlsx:\n{e}")
-                return
-        else:
-            if not template_path.exists():
-                messagebox.showerror("Missing Template", f"Template not found:\n{template_path}")
-                return
-            try:
-                shutil.copyfile(template_path, dest_path)
-                wb = load_workbook(dest_path)
-            except Exception as e:
-                messagebox.showerror("Copy Error", f"Could not prepare final_summary.xlsx:\n{e}")
-                return
-
         try:
-            ws = wb["Summary"]
-        except Exception as e:
-            messagebox.showerror("Sheet Missing", f"'Summary' sheet not found in final_summary.xlsx:\n{e}")
+            target.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            messagebox.showerror("Folder Error", f"Could not prepare target folder:\n{target}\n\n{exc}")
             return
 
-        def to_adjective(score: float) -> str:
-            if score is None:
-                return ""
-            try:
-                s = float(score)
-            except Exception:
-                return ""
-            if s >= 9.3:
-                return "Outstanding"
-            if s >= 7.5:
-                return "Very Satisfactory"
-            if s >= 5.0:
-                return "Satisfactory"
-            if s >= 3.0:
-                return "Fair"
-            if s >= 2.0:
-                return "Unsatisfactory"
-            return "Unsatisfactory"
+        # Use template next to this file to avoid cwd issues
+        template_path = Path(__file__).resolve().parent / "final_summary.xlsx"
+        self._create_final_summary_for_semester(str(target), str(template_path))
 
-        rows = []
-        for fpath in summary_files:
-            try:
-                s_wb = load_workbook(fpath, data_only=True)
-                ws_ti = s_wb["TI"] if "TI" in s_wb.sheetnames else None
-                ws_fac = s_wb["Faculty"] if "Faculty" in s_wb.sheetnames else None
-                name = ws_ti["DC6"].value if ws_ti else None
-                score = ws_fac["S37"].value if ws_fac else None
-                if not name and score is None:
-                    continue
-                adjective = to_adjective(score)
-                rows.append((name or "", score, adjective))
-            except Exception:
+
+    def _rating_to_adjective(self,score):
+        """Convert numeric rating to adjective."""
+        if score is None:
+            return ""
+        try:
+            s = float(score)
+        except Exception:
+            return ""
+        if s >= 9.3:
+            return "Outstanding"
+        if s >= 7.5:
+            return "Very Satisfactory"
+        if s >= 5.0:
+            return "Satisfactory"
+        if s >= 3.0:
+            return "Fair"
+        if s >= 2.0:
+            return "Unsatisfactory"
+        return "Unsatisfactory"
+
+    def _create_final_summary_for_semester(self, sem_folder: str, template_path: str):
+        """
+        sem_folder: the folder 'Summaries > Dept > AY > Sem'
+        template_path: path to final_summary.xlsx template
+        """
+        sem_path = Path(sem_folder)
+        template = Path(template_path)
+
+        if not sem_path.exists():
+            messagebox.showerror("Error", f"Semester folder not found:\n{sem_path}")
+            return
+        if not template.exists():
+            messagebox.showerror("Error", f"Template not found:\n{template}")
+            return
+
+        # 1) Collect all teacher summaries (one per subfolder)
+        teacher_rows = []  # (name, rating, adjective)
+
+        for teacher_dir in sorted(sem_path.iterdir()):
+            if not teacher_dir.is_dir():
                 continue
 
-        if not rows:
-            messagebox.showwarning("No Data", "No usable data found in teacher summaries.")
+            # find the teacher's summary file inside this folder
+            candidates = [
+                p for p in teacher_dir.glob("*.xlsx")
+                if p.name.lower() not in ("final_summary.xlsx", "template.xlsx")
+                and not p.name.startswith("~$")
+            ]
+            if not candidates:
+                continue
+
+            # If multiple, pick the newest
+            candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            src = candidates[0]
+
+            try:
+                # open teacher summary and read Faculty!C9 and Faculty!S37
+                wb_teacher = load_workbook(src, data_only=True)
+                ws_fac = wb_teacher["Faculty"]  # adjust if your sheet name differs
+
+                name = ws_fac["C9"].value
+                rating = ws_fac["S37"].value
+                adjective = self._rating_to_adjective(rating)
+
+                if not name:
+                    # fallback to folder name if C9 is empty
+                    name = teacher_dir.name
+
+                teacher_rows.append((name, rating, adjective))
+            except Exception as e:
+                messagebox.showwarning(
+                    "Warning",
+                    f"Could not read summary for {teacher_dir.name}:\n{e}"
+                )
+
+        if not teacher_rows:
+            messagebox.showinfo("No Data", "No teacher summaries found in this semester folder.")
             return
 
-        # Clear existing rows (B/I/O columns) from row 12 downward
-        max_rows = max(ws.max_row, 12 + len(rows) + 5)
-        for r in range(12, max_rows + 1):
-            ws.cell(row=r, column=2, value=None)   # B
-            ws.cell(row=r, column=9, value=None)   # I
-            ws.cell(row=r, column=15, value=None)  # O
+        # 2) Create a copy of final_summary.xlsx in the sem folder
+        dest_path = sem_path / "final_summary.xlsx"
+        shutil.copyfile(template, dest_path)
 
-        for idx, (name, score, adjective) in enumerate(rows, start=0):
-            row = 12 + idx
-            ws.cell(row=row, column=2, value=name)  # B
-            ws.cell(row=row, column=9, value=score) # I
-            ws.cell(row=row, column=15, value=adjective)  # O
+        # 3) Open that copy and write the rows
+        wb_final = load_workbook(dest_path, data_only=False)
+        # case-insensitive sheet lookup just in case
+        sheet_name = None
+        for s in wb_final.sheetnames:
+            if s.lower() == "summary":
+                sheet_name = s
+                break
+        if sheet_name is None:
+            messagebox.showerror("Error", "No 'Summary' sheet found in final_summary.xlsx template.")
+            return
 
-        try:
-            wb.save(dest_path)
-            messagebox.showinfo("Summary Created", f"Final summary saved:\n{dest_path}")
-        except Exception as e:
-            messagebox.showerror("Save Error", f"Could not save final summary:\n{e}")
+        ws_sum = wb_final[sheet_name]
 
+        start_row = 12  # rows start at 12
+        for idx, (name, rating, adjective) in enumerate(teacher_rows):
+            row = start_row + idx
+
+            # B column: name
+            c_name = ws_sum.cell(row=row, column=2)   # B
+            c_name.value = str(name) if name is not None else ""
+
+            # I column: rating
+            c_rating = ws_sum.cell(row=row, column=9)  # I
+            try:
+                c_rating.value = float(rating) if rating is not None else None
+            except Exception:
+                c_rating.value = rating
+
+            # O column: adjective
+            c_adj = ws_sum.cell(row=row, column=15)   # O
+            c_adj.value = str(adjective) if adjective is not None else ""
+
+        # 4) (Optional but recommended) clear any leftover formulas in B/I/O below our data
+        max_rows_to_clean = 200  # adjust if you can have more than 188 teachers
+        end_clean_row = start_row + max_rows_to_clean
+        last_used_row = start_row + len(teacher_rows)
+
+        for row in range(last_used_row, end_clean_row + 1):
+            for col in (2, 9, 15):  # B, I, O
+                cell = ws_sum.cell(row=row, column=col)
+                if isinstance(cell.value, str) and cell.value.startswith("="):
+                    cell.value = None  # remove TI!DC6, etc.
+
+        wb_final.save(dest_path)
+        messagebox.showinfo("Summary Created", f"Final summary saved:\n{dest_path}")
+
+    
     # ---------------- Data Persistence ---------------- #
     def load_results(self, path=None):
-        """Load processed_results dict from a pickle file (teacher → rater → docs)."""
+        """Load processed_results dict from a pickle file (teacher -> rater -> docs)."""
         # default path = same folder as database
         if path is None:
             db_path = db.get_default_db_path()
@@ -685,7 +733,7 @@ class ResultsPage:
             path = os.path.join(base_dir, "results.pkl")
 
         if not os.path.exists(path):
-            print("⚠️ No saved results found.")
+            print("No saved results found.")
             self.processed_results = {}
             return {}
 
@@ -705,7 +753,7 @@ class ResultsPage:
             return self.processed_results
 
         except Exception as e:
-            print(f"❌ Error loading results: {e}")
+            print(f"Error loading results: {e}")
             self.processed_results = {}
             return {}
 
