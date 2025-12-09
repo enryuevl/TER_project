@@ -244,8 +244,9 @@ class SummaryFormController:
         if "rating period" in self.entry_widgets:
             e = self.entry_widgets["rating period"]
             try:
-                e.delete(0, "end")
-                e.insert(0, f"{sem} AY {ay}")
+                if self._widget_alive(e):
+                    e.delete(0, "end")
+                    e.insert(0, f"{sem} AY {ay}")
             except Exception:
                 pass
 
@@ -269,17 +270,16 @@ class SummaryFormController:
         meta = self._get_teacher_meta(teacher_name)
         try:
             period_text = f"{sem} AY {ay}"
-            for ws in (ws_ti, ws_ter, ws_entry):
-                if ws is None:
-                    continue
-                ws["D7"].value = period_text
-                ws["D12"].value = meta["first_name"]
-                ws["D13"].value = meta["last_name"]
-                ws["D14"].value = meta["middle_name"]
-                ws["D16"].value = meta["rank"]
-                ws["D18"].value = meta["subrank"]
-                ws["D20"].value = meta["department"]
-                ws["D24"].value = meta["dean_name"]
+            if ws_entry is not None:
+                ws_entry["D7"].value = period_text
+                ws_entry["D12"].value = meta["first_name"]
+                ws_entry["D13"].value = meta["last_name"]
+                ws_entry["D14"].value = meta["middle_name"]
+                ws_entry["D16"].value = meta["rank"]
+                ws_entry["D18"].value = meta["subrank"]
+                ws_entry["D20"].value = meta["department"]
+                ws_entry["D23"].value = meta["dean_name"]
+                ws_entry["D24"].value = "Dean"
         except Exception:
             pass
 
@@ -544,6 +544,13 @@ class SummaryFormController:
         ).pack(side="right")
 
     # ---------- helpers ----------
+    @staticmethod
+    def _widget_alive(widget) -> bool:
+        try:
+            return bool(widget) and (not hasattr(widget, "winfo_exists") or widget.winfo_exists())
+        except Exception:
+            return False
+
     def _set_value(self, key, value, field=None):
         if key not in self.entry_widgets:
             return
@@ -552,6 +559,8 @@ class SummaryFormController:
             if field not in widget:
                 return
             widget = widget[field]
+        if not self._widget_alive(widget):
+            return
         if hasattr(widget, "insert") and hasattr(widget, "delete"):
             if "Textbox" in widget.__class__.__name__:
                 widget.delete("1.0", "end")
@@ -732,11 +741,32 @@ class SummaryFormController:
         }
         if not self.db or not teacher_name:
             return meta
+
+        def _split_rank(role_text: str):
+            """Best-effort split of role text into (rank, subrank)."""
+            if not role_text:
+                return "", ""
+            role_text = role_text.strip()
+            rank_labels = [
+                "Assistant Professor",
+                "Associate Professor",
+                "Professor",
+                "Instructor",
+            ]
+            roman = {"I", "II", "III", "IV", "V", "VI"}
+            for label in rank_labels:
+                if role_text.startswith(label):
+                    tail = role_text[len(label):].strip()
+                    sub = tail if tail in roman else (tail or "")
+                    return label, sub
+            # Fallback: treat whole string as rank
+            return role_text, ""
+
         try:
             with self.db.connect() as conn:
                 row = conn.execute(
                     """
-                    SELECT f.first_name, f.middle_name, f.last_name, f.rank, f.subrank,
+                    SELECT f.first_name, f.middle_name, f.last_name, f.role,
                            d.name AS department,
                            dean.full_name AS dean_name
                     FROM faculty f
@@ -750,10 +780,11 @@ class SummaryFormController:
                 meta["first_name"] = row[0] or ""
                 meta["middle_name"] = row[1] or ""
                 meta["last_name"] = row[2] or ""
-                meta["rank"] = row[3] or ""
-                meta["subrank"] = row[4] or ""
-                meta["department"] = row[5] or ""
-                meta["dean_name"] = row[6] or ""
+                rank_label, sub_label = _split_rank(row[3] or "")
+                meta["rank"] = rank_label
+                meta["subrank"] = sub_label
+                meta["department"] = row[4] or ""
+                meta["dean_name"] = row[5] or ""
         except Exception:
             pass
         return meta

@@ -498,7 +498,7 @@ def get_default_pkl_path() -> str:
 def backup_all(backup_dir: Optional[str] = None) -> str:
     """
     Create a backup of both the SQLite database and the pickle file.
-    Returns the backup directory path.
+    Returns the backup directory path. Keeps only the 5 most recent backup pairs.
     """
     db_path = get_default_db_path()
     pkl_path = get_default_pkl_path()
@@ -522,6 +522,21 @@ def backup_all(backup_dir: Optional[str] = None) -> str:
 
     shutil.copy2(db_path, db_backup)
     shutil.copy2(pkl_path, pkl_backup)
+
+    # prune older backups, keep newest 5 pairs
+    try:
+        files = sorted(
+            [f for f in os.listdir(backup_dir) if f.endswith((".sqlite", ".pkl"))],
+            reverse=True,
+        )
+        # keep newest 10 files (5 pairs)
+        for old in files[10:]:
+            try:
+                os.remove(os.path.join(backup_dir, old))
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     return backup_dir
   

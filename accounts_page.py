@@ -26,6 +26,11 @@ class AccountsDatabasePage:
         self.ctx = ctx
 
         self._build_ui()
+        # schedule auto-backup every 5 minutes
+        try:
+            self.master.after(5 * 60 * 1000, self._auto_backup_tick)
+        except Exception:
+            pass
         
         
 
@@ -1812,14 +1817,35 @@ class AccountsDatabasePage:
         except Exception as e:
             messagebox.showerror("Backup Failed", str(e))
 
+    def _auto_backup_tick(self):
+        try:
+            db.backup_all()
+        except Exception:
+            pass
+        try:
+            self.master.after(5 * 60 * 1000, self._auto_backup_tick)
+        except Exception:
+            pass
+
     def load_backup(self):
         try:
-            file_path = filedialog.askopenfilename(
-                title="Select Backup File",
-                filetypes=[("Backup Files", "*.sqlite *.pkl"), ("All Files", "*.*")]
+            # Auto-restore the newest backup in Backups folder (no file picker)
+            documents_folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork")
+            backups_folder = os.path.join(documents_folder, "Backups")
+            if not os.path.exists(backups_folder):
+                messagebox.showwarning("No Backups", "No backups folder found.")
+                return
+
+            candidates = sorted(
+                [os.path.join(backups_folder, f) for f in os.listdir(backups_folder)
+                 if f.endswith((".sqlite", ".pkl"))],
+                key=os.path.getmtime,
+                reverse=True,
             )
-            if not file_path:
-                return  # cancelled
+            if not candidates:
+                messagebox.showwarning("No Backups", "No backup files found.")
+                return
+            file_path = candidates[0]
 
             documents_folder = os.path.join(os.path.expanduser("~"), "Documents", "MyWork")
 

@@ -436,8 +436,22 @@ class LoginApp(ctk.CTk):
 
     # ---------- Role redirect (placeholder) ----------
     def _redirect_to_role(self, role: str, username: str, department_id: int | None):
+        # Close login window, then launch the main app with a callback that reopens login on logout
         self.destroy()
-        main.create_app(role=role, username=username, department_id=department_id)
+
+        def _back_to_login():
+            try:
+                app = LoginApp(logo_path="logo.png")
+                app.mainloop()
+            except Exception as exc:  # guard against unexpected UI errors
+                print(f"Failed to reopen login: {exc}")
+
+        main.create_app(
+            role=role,
+            username=username,
+            department_id=department_id,
+            on_logout=_back_to_login,
+        )
 
 
     # ---------- Shared helpers ----------

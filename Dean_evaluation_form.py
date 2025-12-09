@@ -2,7 +2,7 @@ import os, pickle
 from customtkinter import *
 from tkinter import messagebox
 import db
-from summary_helpers import SummaryFormController
+from summary_helpers import SummaryFormController, protect_workbook_file
 
 
 # --- Rating chips with custom palette (1–5) ---
@@ -763,8 +763,9 @@ class DeanEvaluationForm:
                 template_path
             )  # returns the file it saved
 
-        # If export_full_summary already saved under Summaries, keep it there
+        # If export_full_summary already saved under Summaries, keep and protect it
         if save_path and os.path.exists(save_path):
+            protect_workbook_file(save_path)
             return save_path
 
         # Fallback writer: place file in the same nested Summaries structure
@@ -795,4 +796,5 @@ class DeanEvaluationForm:
 
         include_raters = ("Student", "Peer", "Self", "Dean")
         self._fallback_write_excel(target_path, teacher, include_raters)
+        protect_workbook_file(target_path)
         return target_path

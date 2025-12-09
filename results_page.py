@@ -9,10 +9,11 @@ from datetime import date
 import re
 import shutil, time
 from pathlib import Path
+from openpyxl import load_workbook
 
 import db
 import utils
-from summary_helpers import SummaryFormController   # <-- NEW
+from summary_helpers import SummaryFormController, protect_workbook_file   # <-- NEW
 
 
 class ResultsPage:
@@ -198,11 +199,38 @@ class ResultsPage:
         self._build_tabs()
 
     # ---------------- Tabs ---------------- #
+    def _teacher_department_id(self, teacher_name: str) -> int | None:
+        if not teacher_name:
+            return None
+        try:
+            with db.connect() as conn:
+                row = conn.execute(
+                    "SELECT department_id FROM faculty WHERE full_name = ?",
+                    (teacher_name,),
+                ).fetchone()
+                return row[0] if row else None
+        except Exception:
+            return None
+
     def _build_tabs(self):
         self.tab_buttons = {}
         first_teacher = None
+        user_dept_id = utils.get_current_user().get("department_id")
 
-        for teacher in self.processed_results.keys():
+        # Filter teachers by current user's department if specified
+        all_teachers = list(self.processed_results.keys())
+        if user_dept_id is not None:
+            teachers = [
+                t for t in all_teachers
+                if self._teacher_department_id(t) == user_dept_id
+            ]
+            # if no matches, fall back to all to avoid empty UI
+            if not teachers:
+                teachers = all_teachers
+        else:
+            teachers = all_teachers
+
+        for teacher in teachers:
             if not first_teacher:
                 first_teacher = teacher
             btn = CTkButton(
@@ -418,19 +446,28 @@ class ResultsPage:
         btn_group_left = CTkFrame(control_frame, fg_color="transparent")
         btn_group_left.pack(side="left")
 
-        summary_btn = make_button(
-            btn_group_left,
-            text="View Summary",
-            command=lambda: self._open_summary_for_current(),
-        )
-        summary_btn.pack(side="left", padx=5)
-
         export_btn = make_button(
             btn_group_left,
             text="Export Summary",
             command=lambda: self._export_summary_via_module(),
         )
         export_btn.pack(side="left", padx=5)
+
+        view_summaries_btn = make_button(
+            btn_group_left,
+            text="View Summaries",
+            command=self._open_summaries_folder,
+            width=160,
+        )
+        view_summaries_btn.pack(side="left", padx=5)
+
+        create_summary_btn = make_button(
+            btn_group_left,
+            text="Create Summary",
+            command=self._create_final_summary,
+            width=160,
+        )
+        create_summary_btn.pack(side="left", padx=5)
 
         # Spacer to push Archive to the right
         CTkFrame(control_frame, fg_color="transparent").pack(side="left", expand=True)
@@ -458,8 +495,13 @@ class ResultsPage:
             messagebox.showwarning("No Teacher", "Please select a teacher first.")
             return
         try:
+            # ensure controller has fresh context
+            self.summary.processed_results = self.processed_results
+            self.summary.current_teacher = self.current_teacher
+
             save_path = self.summary.export_full_summary("template.xlsx")
             if save_path:
+                protect_workbook_file(save_path)
                 messagebox.showinfo("Saved", f"✅ Summary updated:\n{save_path}")
 
                 # Activity log (kept from your original export)
@@ -486,6 +528,152 @@ class ResultsPage:
                 )
         except Exception as e:
             messagebox.showerror("Save Error", str(e))
+
+    def _get_department_name(self):
+        user = utils.get_current_user()
+        dept_id = user.get("department_id") if isinstance(user, dict) else None
+        if dept_id is None:
+            return None
+        try:
+            with db.connect() as conn:
+                row = conn.execute("SELECT name FROM departments WHERE id=?", (dept_id,)).fetchone()
+                if row:
+                    return row[0]
+        except Exception:
+            return None
+        return None
+
+    def _get_summary_folder(self):
+        dept_name = self._get_department_name()
+        if not dept_name:
+            return None
+        ay, sem = self._infer_ay_and_sem_from_today()
+        base_root = Path(os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Summaries"))
+        return base_root / dept_name / ay / sem
+
+    def _open_summaries_folder(self):
+        """Open the Summaries folder for current dept/AY/Sem."""
+        target = self._get_summary_folder()
+        if target is None:
+            messagebox.showwarning("Missing Department", "Cannot determine your department.")
+            return
+        if not target.exists():
+            messagebox.showwarning("Not Found", f"Folder not found:\n{target}")
+            return
+
+        try:
+            if os.name == "nt":
+                os.startfile(target)
+            elif sys.platform == "darwin":
+                import subprocess
+                subprocess.run(["open", str(target)])
+            else:
+                import subprocess
+                subprocess.run(["xdg-open", str(target)])
+        except Exception as ex:
+            messagebox.showerror("Open Folder Failed", str(ex))
+
+    def _create_final_summary(self):
+        """Aggregate teacher summaries into final_summary.xlsx for the current dept/AY/Sem."""
+        target_dir = self._get_summary_folder()
+        if target_dir is None:
+            messagebox.showwarning("Missing Department", "Cannot determine your department.")
+            return
+        if not target_dir.exists():
+            messagebox.showwarning("Not Found", f"Folder not found:\n{target_dir}")
+            return
+
+        # Collect teacher summary files (skip final_summary.xlsx itself)
+        summary_files = [
+            p for p in target_dir.glob("*.xlsx")
+            if p.name.lower() != "final_summary.xlsx"
+        ]
+        if not summary_files:
+            messagebox.showwarning("No Summaries", "No teacher summaries found in this period.")
+            return
+
+        # Load template or existing final summary
+        template_path = Path("final_summary.xlsx")
+        dest_path = target_dir / "final_summary.xlsx"
+        if dest_path.exists():
+            try:
+                wb = load_workbook(dest_path)
+            except Exception as e:
+                messagebox.showerror("Load Error", f"Could not open existing final_summary.xlsx:\n{e}")
+                return
+        else:
+            if not template_path.exists():
+                messagebox.showerror("Missing Template", f"Template not found:\n{template_path}")
+                return
+            try:
+                shutil.copyfile(template_path, dest_path)
+                wb = load_workbook(dest_path)
+            except Exception as e:
+                messagebox.showerror("Copy Error", f"Could not prepare final_summary.xlsx:\n{e}")
+                return
+
+        try:
+            ws = wb["Summary"]
+        except Exception as e:
+            messagebox.showerror("Sheet Missing", f"'Summary' sheet not found in final_summary.xlsx:\n{e}")
+            return
+
+        def to_adjective(score: float) -> str:
+            if score is None:
+                return ""
+            try:
+                s = float(score)
+            except Exception:
+                return ""
+            if s >= 9.3:
+                return "Outstanding"
+            if s >= 7.5:
+                return "Very Satisfactory"
+            if s >= 5.0:
+                return "Satisfactory"
+            if s >= 3.0:
+                return "Fair"
+            if s >= 2.0:
+                return "Unsatisfactory"
+            return "Unsatisfactory"
+
+        rows = []
+        for fpath in summary_files:
+            try:
+                s_wb = load_workbook(fpath, data_only=True)
+                ws_ti = s_wb["TI"] if "TI" in s_wb.sheetnames else None
+                ws_fac = s_wb["Faculty"] if "Faculty" in s_wb.sheetnames else None
+                name = ws_ti["DC6"].value if ws_ti else None
+                score = ws_fac["S37"].value if ws_fac else None
+                if not name and score is None:
+                    continue
+                adjective = to_adjective(score)
+                rows.append((name or "", score, adjective))
+            except Exception:
+                continue
+
+        if not rows:
+            messagebox.showwarning("No Data", "No usable data found in teacher summaries.")
+            return
+
+        # Clear existing rows (B/I/O columns) from row 12 downward
+        max_rows = max(ws.max_row, 12 + len(rows) + 5)
+        for r in range(12, max_rows + 1):
+            ws.cell(row=r, column=2, value=None)   # B
+            ws.cell(row=r, column=9, value=None)   # I
+            ws.cell(row=r, column=15, value=None)  # O
+
+        for idx, (name, score, adjective) in enumerate(rows, start=0):
+            row = 12 + idx
+            ws.cell(row=row, column=2, value=name)  # B
+            ws.cell(row=row, column=9, value=score) # I
+            ws.cell(row=row, column=15, value=adjective)  # O
+
+        try:
+            wb.save(dest_path)
+            messagebox.showinfo("Summary Created", f"Final summary saved:\n{dest_path}")
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Could not save final summary:\n{e}")
 
     # ---------------- Data Persistence ---------------- #
     def load_results(self, path=None):

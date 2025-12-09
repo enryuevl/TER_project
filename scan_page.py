@@ -12,6 +12,7 @@ import db
 import pythoncom
 from utils import set_sidebar_state
 import utils
+from summary_helpers import protect_workbook_file
 import datetime
 import shutil
 import json
@@ -1069,11 +1070,13 @@ class ScanPage:
                 self.summary.save_summary_excel(
                     target_path, teacher, include_raters=("Student", "Peer", "Self", "Dean")
                 )
+                protect_workbook_file(target_path)
                 return
             if hasattr(self.summary, "export_summary_excel"):
                 self.summary.export_summary_excel(
                     target_path, teacher, include_raters=("Student", "Peer", "Self", "Dean")
                 )
+                protect_workbook_file(target_path)
                 return
         except Exception as ex:
             print(f"⚠️ summary helper direct-write failed: {ex}")
@@ -1098,6 +1101,7 @@ class ScanPage:
                         os.remove(produced_path)
                     except Exception:
                         pass
+                protect_workbook_file(target_path)
                 return
             except Exception as ex:
                 print(f"⚠️ Could not normalize exported excel: {ex}")
@@ -1129,6 +1133,7 @@ class ScanPage:
             row += 1
 
         wb.save(target_path)
+        protect_workbook_file(target_path)
 
     def save_csv(self):
         if not self.processed_results:
