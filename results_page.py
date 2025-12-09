@@ -19,14 +19,12 @@ from summary_helpers import SummaryFormController, protect_workbook_file   # <--
 class ResultsPage:
     def __init__(self, master, processed_results):
         self.master = master
-        # Respect caller-provided results; only load from disk when none given
-        if processed_results is None:
-            self.processed_results = self.load_results()
-        else:
-            self.processed_results = processed_results
+        self.processed_results = processed_results
         self.current_teacher = None
         self.tab_buttons = {}
 
+        # Load results from pickle
+        self.load_results()
         # Prepare shared Summary controller (module)
         self.summary = SummaryFormController(self.processed_results, db_module=db)
 
@@ -398,8 +396,8 @@ class ResultsPage:
             foreground=[("hover", "#FFFFFF")]
         )
 
-        self.tree.tag_configure("oddrow", background="#F9FAFB", foreground="#1F2937")
-        self.tree.tag_configure("evenrow", background="#E5E7EB", foreground="#1F2937")
+        self.tree.tag_configure("oddrow", background="#F3F4F6", foreground="#1F2937")
+        self.tree.tag_configure("evenrow", background="#F3F4F6", foreground="#1F2937")
         self.tree.tag_configure(
             "section",
             background="#BF3131",
@@ -504,7 +502,7 @@ class ResultsPage:
             save_path = self.summary.export_full_summary("template.xlsx")
             if save_path:
                 protect_workbook_file(save_path)
-                messagebox.showinfo("Saved", f"Summary updated:\n{save_path}")
+                messagebox.showinfo("Saved", f"✅ Summary updated:\n{save_path}")
 
                 # Activity log (kept from your original export)
                 user = utils.get_current_user()
@@ -576,20 +574,20 @@ class ResultsPage:
             messagebox.showerror("Open Folder Failed", str(ex))
 
     def _create_final_summary(self):
-        """Directly generate the final summary for the current dept/AY/Sem."""
-        target = self._get_summary_folder()
-        if target is None:
+        """Generate the final summary directly for the current dept/AY/Sem (no dialog)."""
+        sem_folder = self._get_summary_folder()
+        if sem_folder is None:
             messagebox.showwarning("Missing Department", "Cannot determine your department.")
             return
         try:
-            target.mkdir(parents=True, exist_ok=True)
+            sem_folder.mkdir(parents=True, exist_ok=True)
         except Exception as exc:
-            messagebox.showerror("Folder Error", f"Could not prepare target folder:\n{target}\n\n{exc}")
+            messagebox.showerror("Folder Error", f"Could not prepare folder:\n{sem_folder}\n\n{exc}")
             return
 
-        # Use template next to this file to avoid cwd issues
+        # Template lives beside this file (works even if cwd differs)
         template_path = Path(__file__).resolve().parent / "final_summary.xlsx"
-        self._create_final_summary_for_semester(str(target), str(template_path))
+        self._create_final_summary_for_semester(str(sem_folder), str(template_path))
 
 
     def _rating_to_adjective(self,score):
@@ -725,7 +723,7 @@ class ResultsPage:
     
     # ---------------- Data Persistence ---------------- #
     def load_results(self, path=None):
-        """Load processed_results dict from a pickle file (teacher -> rater -> docs)."""
+        """Load processed_results dict from a pickle file (teacher → rater → docs)."""
         # default path = same folder as database
         if path is None:
             db_path = db.get_default_db_path()
@@ -733,7 +731,7 @@ class ResultsPage:
             path = os.path.join(base_dir, "results.pkl")
 
         if not os.path.exists(path):
-            print("No saved results found.")
+            print("⚠️ No saved results found.")
             self.processed_results = {}
             return {}
 
@@ -753,7 +751,7 @@ class ResultsPage:
             return self.processed_results
 
         except Exception as e:
-            print(f"Error loading results: {e}")
+            print(f"❌ Error loading results: {e}")
             self.processed_results = {}
             return {}
 
