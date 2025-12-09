@@ -11,8 +11,12 @@ except Exception as _e:
 
 try:
     from openpyxl import load_workbook
+    from openpyxl.utils.protection import hash_password
+    from openpyxl.workbook.protection import WorkbookProtection
 except Exception:
     load_workbook = None
+    hash_password = None
+    WorkbookProtection = None
 
 try:
     from tkinter import messagebox
@@ -25,6 +29,44 @@ def _safe_filename(name: str) -> str:
     name = re.sub(r'[\\\\/:*?"<>|]+', "", name)
     name = re.sub(r"\\s+", " ", name).strip()
     return name
+
+
+# ---------- Workbook protection helpers ----------
+def _apply_workbook_protection(wb, password: str = "ATSLock"):
+    """Protect workbook structure and all sheets with a password to deter tampering."""
+    if not wb or not hash_password or not WorkbookProtection:
+        return
+
+    pw = password or "ATSLock"
+    hashed = hash_password(pw)
+    wb.security = WorkbookProtection(lockStructure=True, workbookPassword=hashed)
+
+    for ws in wb.worksheets:
+        try:
+            ws.protection.sheet = True
+            # set_password hashes internally; fallback to hashed if set_password missing
+            if hasattr(ws.protection, "set_password"):
+                ws.protection.set_password(pw)
+            else:
+                ws.protection.password = hashed
+            ws.protection.enable()
+        except Exception:
+            continue
+
+
+def protect_workbook_file(path: str, password: str = "ATSLock") -> str:
+    """Load, protect, and save an existing workbook file. Returns the path."""
+    if load_workbook is None:
+        return path
+    if not path or not os.path.exists(path):
+        return path
+    try:
+        wb = load_workbook(path)
+        _apply_workbook_protection(wb, password)
+        wb.save(path)
+    except Exception:
+        pass
+    return path
 
 
 # ---------------- Core calculations (shared) ---------------- #
@@ -196,6 +238,8 @@ class SummaryFormController:
         if not sem and not ay:
             ay, sem = infer_ay_and_sem_from_today()
 
+        teacher_name = self.current_teacher or "Unknown Teacher"
+
         # Ensure Rating Period field reflects the computed values
         if "rating period" in self.entry_widgets:
             e = self.entry_widgets["rating period"]
@@ -209,6 +253,10 @@ class SummaryFormController:
         wb = load_workbook(template_path)
         ws_ti = wb["TI"]
         ws_ter = wb["TER"]
+        try:
+            ws_entry = wb["Entry"]
+        except Exception:
+            ws_entry = None
 
         # Write data into sheets
         self._write_student_scores(ws_ti)
@@ -217,8 +265,46 @@ class SummaryFormController:
         self._write_self_scores(ws_ti)
         self._write_dean_scores(ws_ti)
 
+        # Populate header metadata for first-time/overwrite writes
+        meta = self._get_teacher_meta(teacher_name)
+        try:
+            period_text = f"{sem} AY {ay}"
+            for ws in (ws_ti, ws_ter, ws_entry):
+                if ws is None:
+                    continue
+                ws["D7"].value = period_text
+                ws["D12"].value = meta["first_name"]
+                ws["D13"].value = meta["last_name"]
+                ws["D14"].value = meta["middle_name"]
+                ws["D16"].value = meta["rank"]
+                ws["D18"].value = meta["subrank"]
+                ws["D20"].value = meta["department"]
+                ws["D24"].value = meta["dean_name"]
+        except Exception:
+            pass
+
+        # If the teacher being evaluated is a dean, align behavior weights on TI/TER (J25-J28) to 5%
+        try:
+            is_dean = self._is_teacher_dean(teacher_name)
+        except Exception:
+            is_dean = False
+        if is_dean:
+            for r in range(25, 29):  # rows 25-28, column J (10)
+                cell = ws_ti.cell(row=r, column=10)
+                cell.value = 0.05
+                try:
+                    cell.number_format = "0%"
+                except Exception:
+                    pass
+            for r in range(25, 29):
+                cell = ws_ter.cell(row=r, column=10)
+                cell.value = 0.05
+                try:
+                    cell.number_format = "0%"
+                except Exception:
+                    pass
+
         # ------- NEW: build nested save path under Summaries -------
-        teacher_name = self.current_teacher or "Unknown Teacher"
         dept_name = self.get_department_for_teacher(teacher_name) or "UnknownDept"
 
         base_root = os.path.join(os.path.expanduser("~"), "Documents", "MyWork", "Summaries")
@@ -236,6 +322,7 @@ class SummaryFormController:
         save_path = os.path.join(out_dir, filename)
         # -----------------------------------------------------------
 
+        _apply_workbook_protection(wb, password="ATSLock")
         wb.save(save_path)
         return save_path
 
@@ -631,5 +718,44 @@ class SummaryFormController:
             return row is not None
         except Exception:
             return False
+
+    def _get_teacher_meta(self, teacher_name: str):
+        """Return dict with name parts, rank, subrank, department, dean name."""
+        meta = {
+            "first_name": "",
+            "middle_name": "",
+            "last_name": "",
+            "rank": "",
+            "subrank": "",
+            "department": "",
+            "dean_name": "",
+        }
+        if not self.db or not teacher_name:
+            return meta
+        try:
+            with self.db.connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT f.first_name, f.middle_name, f.last_name, f.rank, f.subrank,
+                           d.name AS department,
+                           dean.full_name AS dean_name
+                    FROM faculty f
+                    JOIN departments d ON d.id = f.department_id
+                    LEFT JOIN faculty dean ON d.dean_id = dean.id
+                    WHERE f.full_name = ?
+                    """,
+                    (teacher_name,),
+                ).fetchone()
+            if row:
+                meta["first_name"] = row[0] or ""
+                meta["middle_name"] = row[1] or ""
+                meta["last_name"] = row[2] or ""
+                meta["rank"] = row[3] or ""
+                meta["subrank"] = row[4] or ""
+                meta["department"] = row[5] or ""
+                meta["dean_name"] = row[6] or ""
+        except Exception:
+            pass
+        return meta
 
     
