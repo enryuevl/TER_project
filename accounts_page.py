@@ -1153,16 +1153,45 @@ class AccountsDatabasePage:
         CTkLabel(parent, text="Teaching Assignment Form", font=("Arial", 18, "bold"),
                 text_color="#691612").pack(pady=10)
 
-        # Faculty dropdown
+        # Faculty dropdown (dept-first options, global search when typing)
         faculty_var = StringVar()
-        faculty_options = ["TBA"]; faculty_map = {"TBA": None}
+        faculty_map = {"TBA": None}
+        dept_faculty, all_faculty = [], []
+        user_dept = self.ctx.department_id
         with db.connect() as conn:
-            for fid, fname in conn.execute("SELECT id, full_name FROM faculty ORDER BY full_name"):
-                faculty_options.append(fname); faculty_map[fname] = fid
-        faculty_menu = CTkOptionMenu(parent, variable=faculty_var, values=faculty_options)
-        self._apply_dropdown_theme(faculty_menu)    
+            for fid, fname, dept_id in conn.execute(
+                "SELECT id, full_name, department_id FROM faculty ORDER BY full_name"
+            ):
+                faculty_map[fname] = fid
+                all_faculty.append(fname)
+                if user_dept is not None and dept_id == user_dept:
+                    dept_faculty.append(fname)
+        initial_list = ["TBA"] + (dept_faculty if dept_faculty else all_faculty)
+
+        faculty_menu = CTkComboBox(parent, variable=faculty_var, values=initial_list)
+        self._apply_dropdown_theme(faculty_menu)
         faculty_menu.pack(fill="x", padx=20, pady=5)
         faculty_var.set("TBA")
+        faculty_entry = faculty_menu._entry  # underlying Entry for refocus
+
+        def filter_faculty(event=None):
+            """When typing, search across ALL teachers; empty query shows dept-first list."""
+            query = faculty_var.get().strip().lower()
+            if not query:
+                values = ["TBA"] + (dept_faculty if dept_faculty else all_faculty)
+            else:
+                values = ["TBA"] + [n for n in all_faculty if query in n.lower()]
+
+            faculty_menu.configure(values=values)
+            # keep caret and focus so user can continue typing
+            try:
+                faculty_entry.focus_set()
+                faculty_entry.icursor("end")
+            except Exception:
+                pass
+
+
+        faculty_entry.bind("<KeyRelease>", filter_faculty)
 
         # ---- Subject dropdown (starts disabled/empty) ----
         subject_var = StringVar()
