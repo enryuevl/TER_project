@@ -48,14 +48,24 @@ class HomePage:
         right_sidebar.pack(side="right", fill="y", padx=(10, 0))
         right_sidebar.pack_propagate(False)
 
-        # Build left column sections
-        self._build_stats(left_col)       # KPIs row
-        self._build_reports(left_col)     # Students per Faculty/Subject
-        self._build_archive(left_col)     # Archive (bigger)
-        self._build_table(left_col)       # Recent Evaluations
+         # --- Decide layout based on role ---
+        user = utils.get_current_user()
+        role = (user.get("role") or "").lower()
 
-        # Build right activity sidebar
+        if role == "admin":
+            # Admin: see overall scan totals per department
+            self._build_stats(left_col)                 # keep KPI cards
+            self._build_admin_dept_overview(left_col)   # NEW: per-department totals
+            self._build_table(left_col)                 # recent eval summaries
+        else:
+            # Dean / Operator: existing view
+            self._build_stats(left_col)
+            self._build_reports(left_col)
+            self._build_archive(left_col)
+            self._build_table(left_col)
+
         self._build_activity_sidebar(right_sidebar)
+        
 
     # ---------------- STATS ROW ----------------
     def _build_stats(self, parent):
@@ -809,3 +819,145 @@ class HomePage:
             return index
         except Exception:
             return index
+
+    def _compute_completed_by_department(self):
+        """
+        Return dict {dept_id: completed_scans_count} for Student evaluations.
+        """
+        dept_completed = {}
+
+        try:
+            db_path = db.get_default_db_path()
+            base_dir = os.path.dirname(db_path)
+            pkl_path = os.path.join(base_dir, getattr(db, "PKL_FILENAME", "results.pkl"))
+            if not os.path.exists(pkl_path):
+                return dept_completed
+
+            import pickle
+            with open(pkl_path, "rb") as f:
+                data = pickle.load(f)
+            processed_results = (
+                data["results"] if isinstance(data, dict) and "results" in data else data
+            )
+
+            # Map teacher -> department_id
+            teacher_to_dept = {}
+            with db.connect() as conn:
+                rows = conn.execute(
+                    "SELECT full_name, department_id FROM faculty"
+                ).fetchall()
+                teacher_to_dept = {r[0]: r[1] for r in rows}
+
+            for teacher, raters in (processed_results or {}).items():
+                if not isinstance(raters, dict) or "Student" not in raters:
+                    continue
+
+                dept_id = teacher_to_dept.get(teacher)
+                if dept_id is None:
+                    continue
+
+                count = len(raters.get("Student") or [])
+                dept_completed[dept_id] = dept_completed.get(dept_id, 0) + count
+
+        except Exception:
+            # fail silent; dashboard will just show 0s
+            pass
+
+        return dept_completed
+
+    def _build_admin_dept_overview(self, parent):
+        """
+        Admin-only section:
+        Show Expected vs Completed vs Remaining scans aggregated per department.
+        """
+        frame = CTkFrame(parent, fg_color="#FFFFFF", corner_radius=14, height=360)
+        frame.pack(fill="x", padx=10, pady=(0, 20))
+        frame.pack_propagate(False)
+
+        header = CTkFrame(frame, fg_color="transparent")
+        header.pack(fill="x", padx=20, pady=(15, 10))
+
+        CTkLabel(
+            header,
+            text="Overall Scan Completion by Department",
+            font=("Poppins", 18, "bold"),
+            text_color="#691612",
+        ).pack(side="left")
+
+        # Table shell
+        table = CTkFrame(frame, fg_color="#F5F5F5", corner_radius=10)
+        table.pack(fill="both", expand=True, padx=20, pady=10)
+
+        head = CTkFrame(table, fg_color="transparent")
+        head.pack(fill="x", padx=10, pady=(10, 6))
+
+        headers = ["Department", "Expected (Σ)", "Completed (Σ)", "Remaining (Σ)"]
+        widths = [260, 140, 140, 140]
+
+        for i, (h, w) in enumerate(zip(headers, widths)):
+            CTkLabel(
+                head,
+                text=h,
+                font=("Poppins", 12, "bold"),
+                text_color="#495057",
+                width=w,
+                anchor="w",
+            ).grid(row=0, column=i, sticky="w", padx=6)
+
+        body = CTkScrollableFrame(table, fg_color="#FFFFFF", corner_radius=8)
+        body.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        # ---- Load data from DB + results.pkl ----
+        # 1) Expected per department (sum expected_students across all teaching assignments)
+        dept_rows = []
+        try:
+            with db.connect() as conn:
+                dept_rows = conn.execute(
+                    """
+                    SELECT d.id,
+                           d.name,
+                           COALESCE(SUM(ta.expected_students), 0) AS expected_sum
+                    FROM departments d
+                    LEFT JOIN faculty f ON f.department_id = d.id
+                    LEFT JOIN teaching_assignments ta ON ta.teacher_id = f.id
+                    GROUP BY d.id, d.name
+                    ORDER BY d.name
+                    """
+                ).fetchall()
+        except Exception:
+            dept_rows = []
+
+        # 2) Completed per department from results.pkl
+        completed_by_dept = self._compute_completed_by_department()
+
+        if not dept_rows:
+            CTkLabel(
+                body,
+                text="No departments or teaching assignments found.",
+                font=("Poppins", 12),
+                text_color="#6B7280",
+            ).pack(pady=12)
+            return
+
+        for i, (dept_id, dept_name, expected_sum) in enumerate(dept_rows, start=1):
+            completed = int(completed_by_dept.get(dept_id, 0))
+            remaining = max(int(expected_sum) - completed, 0)
+
+            row = CTkFrame(body, fg_color="#F8F9FA" if i % 2 == 0 else "#FFFFFF")
+            row.pack(fill="x", padx=6, pady=3)
+
+            vals = [
+                dept_name,
+                str(expected_sum),
+                str(completed),
+                str(remaining),
+            ]
+            for c, (txt, w) in enumerate(zip(vals, widths)):
+                CTkLabel(
+                    row,
+                    text=txt,
+                    font=("Poppins", 12),
+                    width=w,
+                    anchor="w",
+                    text_color="#212529",
+                ).grid(row=0, column=c, padx=6, sticky="w")

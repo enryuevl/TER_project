@@ -290,3 +290,20 @@ def get_summary_export_path(teacher: str, ay: str, sem: str, base_dir: str | Non
     if base_dir is None:
         base_dir = os.path.dirname(db.get_default_db_path())
     return os.path.join(base_dir, build_summary_filename(teacher, ay, sem))
+
+
+# utils.py
+import os, sys
+
+def resource_path(relative_path: str) -> str:
+    """
+    Get absolute path to resource, works for dev and for PyInstaller EXE.
+    """
+    # When bundled by PyInstaller, sys._MEIPASS points to the temp folder
+    if hasattr(sys, "_MEIPASS"):
+        base_path = sys._MEIPASS
+    else:
+        # When running from source
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, relative_path)

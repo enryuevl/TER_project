@@ -113,13 +113,15 @@ class LoginApp(ctk.CTk):
         self.header.grid_columnconfigure(0, weight=1)
 
         self.logo_image = None
-        if logo_path and os.path.exists(logo_path):
+        if logo_path:
             try:
-                img = Image.open(logo_path)
+                full_logo = utils.resource_path(logo_path)
+                img = Image.open(full_logo)
                 self.logo_image = ctk.CTkImage(img, size=(96, 96))
                 ctk.CTkLabel(self.header, image=self.logo_image, text="").grid(row=0, column=0, pady=(0, 6))
-            except (UnidentifiedImageError, OSError):
+            except Exception:
                 self.logo_image = None
+
 
         ctk.CTkLabel(self.header, text="Camarines Norte State College",
                      font=self.font_title, text_color=PRIMARY).grid(row=1, column=0, pady=(0, 2))

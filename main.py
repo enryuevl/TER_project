@@ -13,6 +13,9 @@ from scanner import WIAScanner
 import threading
 import datetime
 import os
+import shutil 
+import sys
+
 # ── module Imports ──
 from accounts_page import AccountsDatabasePage
 from scan_page import ScanPage
@@ -55,7 +58,8 @@ def create_app(role: str, username: str, department_id: int | None, on_logout=No
 
     # Logo
     try:
-        logo_img_data = Image.open("logo.png").convert("RGBA")
+        logo_path = utils.resource_path("logo.png")
+        logo_img_data = Image.open(logo_path).convert("RGBA")
         logo_img = CTkImage(light_image=logo_img_data, dark_image=logo_img_data, size=(120, 120))
         logo_label = CTkLabel(master=sidebar_frame, text="", image=logo_img, bg_color="transparent")
         logo_label.pack(pady=(30, 20))
@@ -74,7 +78,9 @@ def create_app(role: str, username: str, department_id: int | None, on_logout=No
 
     def load_icon(name):
         try:
-            img = Image.open(icons[name])
+            img_path = utils.resource_path(icons[name])
+            img = Image.open(img_path)
+
             return CTkImage(light_image=img, dark_image=img, size=(20, 20))
         except Exception:
             return None
@@ -335,6 +341,44 @@ def create_app(role: str, username: str, department_id: int | None, on_logout=No
     app.mainloop()
 
 
+
+def initialize_user_data():
+    """
+    On first run: copy default DB and results.pkl
+    from the application folder into Documents/MyWork.
+    """
+    # Source folder (EXE folder when bundled)
+    if getattr(sys, 'frozen', False):
+        app_dir = sys._MEIPASS  # PyInstaller temp dir
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Destination folder
+    user_dir = os.path.join(os.environ['USERPROFILE'], "Documents", "MyWork")
+    os.makedirs(user_dir, exist_ok=True)
+
+    files_to_copy = [
+        "ter_db2.sqlite",
+        "results.pkl",
+        "template.xlsx",
+        "summary.xlsx",
+    ]
+
+    for filename in files_to_copy:
+        src = os.path.join(base_dir, filename)
+        dst = os.path.join(user_dir, filename)
+
+        # Only copy if not yet created
+        if os.path.exists(src) and not os.path.exists(dst):
+            try:
+                shutil.copy2(src, dst)
+                print(f"[INIT] Copied {filename} to {dst}")
+            except Exception as e:
+                print(f"[INIT ERROR] Failed to copy {filename}: {e}")
+
+
 # Standalone run (double-click friendly): opens as admin
 if __name__ == "__main__":
+    initialize_user_data()
     create_app(role="admin", username="Admin", department_id=1)
