@@ -37,6 +37,9 @@ class ScanPage:
         self.subject_var = StringVar()
         self.block_var = StringVar()
 
+         # NEW: layout toggle ("New" / "Old")
+        self.section_layout_var = StringVar(value="New")
+        
         # ID mappings
         self.teacher_name_to_id = {}
         self.subject_code_to_id = {}
@@ -482,7 +485,36 @@ class ScanPage:
             text_color="#64748B"
         )
         self.status_label.pack(pady=5, padx=15, anchor="w")
-   
+
+        
+        # --- Layout toggle (New vs Old form) ---
+        layout_row = CTkFrame(scanner_frame, fg_color="transparent")
+        layout_row.pack(fill="x", pady=(5, 10), padx=15)
+
+        CTkLabel(
+            layout_row,
+            text="Form Layout",
+            font=("Montserrat", 14, "bold"),
+            text_color="#334155"
+        ).pack(side="left")
+
+        layout_menu = CTkOptionMenu(
+            layout_row,
+            variable=self.section_layout_var,
+            values=["New", "Old"],
+            width=120,
+            height=30,
+            font=("Montserrat", 13),
+            fg_color="#BF3131",
+            button_color="#691612",
+            button_hover_color="#8E1616",
+            text_color="#FFFFFF",
+            dropdown_fg_color="#FFFFFF",
+            dropdown_hover_color="#F3D0D0",
+            dropdown_text_color="#333333",
+            dropdown_font=("Montserrat", 13),
+        )
+        layout_menu.pack(side="right")
 
     def _build_teacher_dropdown(self, parent):
         teacher_frame = CTkFrame(parent, fg_color="#FFFFFF", corner_radius=10)
@@ -905,12 +937,19 @@ class ScanPage:
                 continue
 
             try:
-                result_dict, annotated_img = main_code.process_sections(img)
+                # Decide which section layout to use
+                layout_choice = getattr(self, "section_layout_var", None)
+                if layout_choice is not None and layout_choice.get().lower().startswith("old"):
+                    layout_mode = "old"
+                else:
+                    layout_mode = "new"
+
+                result_dict, annotated_img = main_code.process_sections(img, mode=layout_mode)
             except Exception as e:
                 qc_errors.append((entry.name, f"processing error: {e}"))
                 continue
-
-            # 🔒 STRICT QC (your rule): all 4 sections complete; rejects are discarded
+            
+            #  STRICT QC (your rule): all 4 sections complete; rejects are discarded
             is_ok, page_blank, missing_map, total_detected = self._qc_check_page(result_dict)
             if not is_ok:
                 if page_blank:

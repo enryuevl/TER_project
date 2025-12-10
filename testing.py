@@ -16,6 +16,7 @@ from main_code import fix_orientation, process_sections
         "Section 4": resized[981:1146, 579:790],
     }'''
 
+
 def print_scores(page_index, filename, all_section_scores):
     """Pretty-print the OMR results for one page."""
     print(f"\n==============================")
