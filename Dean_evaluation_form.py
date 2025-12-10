@@ -127,6 +127,9 @@ class DeanEvaluationForm:
         left = CTkFrame(body, fg_color="#FFFFFF", corner_radius=10)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=0)
         left.grid_rowconfigure(99, weight=1)
+        
+        role = (getattr(self.ctx, "role", "") or "").lower()
+
 
         CTkLabel(
             left,
@@ -138,24 +141,40 @@ class DeanEvaluationForm:
         teacher_list = []
         try:
             with db.connect() as conn:
-                teacher_query = [
-                    "SELECT id, full_name",
-                    "FROM faculty",
-                    "WHERE is_active = 1",
-                ]
-                params = []
                 dept_id = getattr(self.ctx, "department_id", None)
-                if dept_id is not None:
-                    teacher_query.append("AND department_id = ?")
-                    params.append(dept_id)
-                teacher_query.append("ORDER BY full_name")
-                query = " ".join(teacher_query)
-                rows = conn.execute(query, params).fetchall()
+
+                if role == "admin":
+                    # Admin: faculty dropdown = ALL deans (supervise all of them)
+                    rows = conn.execute(
+                        """
+                        SELECT f.id, f.full_name
+                        FROM faculty f
+                        JOIN departments d ON d.dean_id = f.id
+                        WHERE f.is_active = 1
+                        ORDER BY f.full_name
+                        """
+                    ).fetchall()
+                else:
+                    # Non-admin: faculty dropdown = active faculty in own department
+                    teacher_query = [
+                        "SELECT id, full_name",
+                        "FROM faculty",
+                        "WHERE is_active = 1",
+                    ]
+                    params = []
+                    if dept_id is not None:
+                        teacher_query.append("AND department_id = ?")
+                        params.append(dept_id)
+                    teacher_query.append("ORDER BY full_name")
+                    query = " ".join(teacher_query)
+                    rows = conn.execute(query, params).fetchall()
+
                 if rows:
                     self.teacher_name_to_id = {full_name: fid for fid, full_name in rows}
                     teacher_list = list(self.teacher_name_to_id.keys())
         except Exception as e:
             messagebox.showerror("DB Error", str(e))
+
 
         placeholder = "No teachers found"
         placeholder_peer = "No peers found"
@@ -179,8 +198,20 @@ class DeanEvaluationForm:
         try:
             with db.connect() as conn:
                 dept_id = getattr(self.ctx, "department_id", None)
-                if dept_id is not None:
-                    # Get deans from other departments
+
+                if role == "admin":
+                    # Admin: peer dropdown = ALL deans as well (peers are deans)
+                    rows = conn.execute(
+                        """
+                        SELECT f.id, f.full_name
+                        FROM faculty f
+                        JOIN departments d ON d.dean_id = f.id
+                        WHERE f.is_active = 1
+                        ORDER BY f.full_name
+                        """
+                    ).fetchall()
+                elif dept_id is not None:
+                    # Dean user: peers are deans of OTHER departments
                     peer_query = """
                         SELECT f.id, f.full_name
                         FROM faculty f
@@ -190,11 +221,15 @@ class DeanEvaluationForm:
                         ORDER BY f.full_name
                     """
                     rows = conn.execute(peer_query, (dept_id,)).fetchall()
-                    if rows:
-                        self.peer_name_to_id = {full_name: fid for fid, full_name in rows}
-                        peer_list = list(self.peer_name_to_id.keys())
+                else:
+                    rows = []
+
+                if rows:
+                    self.peer_name_to_id = {full_name: fid for fid, full_name in rows}
+                    peer_list = list(self.peer_name_to_id.keys())
         except Exception as e:
             messagebox.showerror("DB Error", str(e))
+
 
         peer_dropdown = CTkOptionMenu(
             left, variable=self.peer_var,
@@ -758,6 +793,28 @@ class DeanEvaluationForm:
 
         template_path = "template.xlsx"
         save_path = None
+        
+         # --- NEW: set VPAA override when admin supervises deans ---
+        role = (getattr(self.ctx, "role", "") or "").lower()
+        try:
+            # reset any previous override
+            self.summary.supervisor_override = None
+        except Exception:
+            pass
+
+        if role == "admin":
+            # If the teacher being evaluated is a dean, admin (VPAA) is the supervisor
+            try:
+                is_dean = self.summary._is_teacher_dean(teacher)
+            except Exception:
+                is_dean = False
+
+            if is_dean:
+                self.summary.supervisor_override = {
+                    "name": "Dr. Dolores C. Volante, EdD",
+                    "title": "VPAA",
+                }
+                
         if hasattr(self.summary, "export_full_summary"):
             save_path = self.summary.export_full_summary(
                 template_path

@@ -153,6 +153,7 @@ class SummaryFormController:
         self.current_teacher: Optional[str] = None
         self.semester_var = None
         self.academic_year_var = None
+        self.supervisor_override: Optional[dict] = None
 
     # ---------- DB lookup ----------
     def get_department_for_teacher(self, teacher_name: str) -> str:
@@ -268,6 +269,10 @@ class SummaryFormController:
 
         # Populate header metadata for first-time/overwrite writes
         meta = self._get_teacher_meta(teacher_name)
+        override = getattr(self, "supervisor_override", None) or None
+        if override:
+            meta["dean_name"] = override.get("name", meta.get("dean_name", ""))
+            meta["dean_title"] = override.get("title", meta.get("dean_title", "Dean"))
         try:
             period_text = f"{sem} AY {ay}"
             if ws_entry is not None:
@@ -279,7 +284,7 @@ class SummaryFormController:
                 ws_entry["D18"].value = meta["subrank"]
                 ws_entry["D20"].value = meta["department"]
                 ws_entry["D23"].value = meta["dean_name"]
-                ws_entry["D24"].value = "Dean"
+                ws_entry["D24"].value = meta.get("dean_title", "Dean")
         except Exception:
             pass
 
@@ -738,6 +743,7 @@ class SummaryFormController:
             "subrank": "",
             "department": "",
             "dean_name": "",
+            "dean_title": "Dean",
         }
         if not self.db or not teacher_name:
             return meta
