@@ -35,10 +35,10 @@ def process_sections(img):
 
     # Define sections dictionary; each section is processed independently.
     sections = {
-        "Section 1": resized[461:613, 579:790],
-        "Section 2": resized[631:784, 579:790],
-        "Section 3": resized[802:964, 579:790],
-        "Section 4": resized[981:1146, 579:790],
+        "Section 1": resized[459:634, 571:844],
+        "Section 2": resized[615:801, 571:844],
+        "Section 3": resized[782:967, 571:844],
+        "Section 4": resized[949:1129, 571:844],
     }
 
     all_section_scores = {}

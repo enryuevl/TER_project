@@ -1,156 +1,147 @@
-"""
-Standalone tester script to simulate how the QC error dialog
-from the scan page looks, without running the full app.
-"""
+import os
+import sys
+import cv2
+import numpy as np
+from PIL import Image
+import pythoncom
 
-from customtkinter import (
-    CTk,
-    CTkFrame,
-    CTkToplevel,
-    CTkLabel,
-    CTkScrollableFrame,
-    CTkButton,
-)
+from scanner import WIAScanner
+from main_code import fix_orientation, process_sections
+
+# Define sections dictionary; each section is processed independently.
+'''sections = {
+        "Section 1": resized[461:613, 579:790],
+        "Section 2": resized[631:784, 579:790],
+        "Section 3": resized[802:964, 579:790],
+        "Section 4": resized[981:1146, 579:790],
+    }'''
+
+def print_scores(page_index, filename, all_section_scores):
+    """Pretty-print the OMR results for one page."""
+    print(f"\n==============================")
+    print(f" PAGE {page_index}: {filename}")
+    print(f"==============================")
+
+    if not all_section_scores:
+        print("No marks detected on this page.")
+        return
+
+    for section_name, row_scores in all_section_scores.items():
+        print(f"\n{section_name}:")
+        if not row_scores:
+            print("  (no rows detected)")
+            continue
+
+        for row_idx in sorted(row_scores.keys()):
+            print(f"  Row {row_idx}: Score {row_scores[row_idx]}")
 
 
-def show_qc_error_dialog(parent, qc_errors):
+def process_batch_folder(batch_dir):
     """
-    Local copy of the ScanPage QC error dialog UI, so we can
-    preview it without importing the full ScanPage class.
+    For every scanned image in the given batch folder:
+    - load image
+    - fix orientation
+    - run process_sections (from main_code)
+    - save annotated image
+    - print scores to terminal
     """
-    TOPBAR = "#BF3131"
-    SIDEBAR_BTN = "#AC5353"
-    HOVER = "#BF3131"
-    PANEL_BG = "#F5F5F5"
-    LIGHT_TEXT = "#FFEFEF"
-    WHITE = "#FFFFFF"
-
-    # --- Dialog Window ---
-    dialog = CTkToplevel(parent)
-    dialog.title("QC Errors Detected")
-    dialog.geometry("560x360")
-    dialog.resizable(False, False)
-
-    dialog.transient(parent)
-    dialog.grab_set()
-
-    # --- Main container ---
-    main_frame = CTkFrame(dialog, fg_color=PANEL_BG, corner_radius=12)
-    main_frame.pack(fill="both", expand=True, padx=16, pady=16)
-
-    # --- Header bar ---
-    header = CTkFrame(main_frame, fg_color=TOPBAR, corner_radius=10)
-    header.pack(fill="x", padx=8, pady=(8, 4))
-
-    CTkLabel(
-        header,
-        text="Incomplete / Blank Pages Detected",
-        font=("Poppins", 16, "bold"),
-        text_color=WHITE,
-    ).pack(side="left", padx=12, pady=8)
-
-    CTkLabel(
-        header,
-        text="ERROR",
-        font=("Poppins", 11, "bold"),
-        text_color=TOPBAR,
-        fg_color=LIGHT_TEXT,
-        corner_radius=999,
-        padx=10,
-        pady=4,
-    ).pack(side="right", padx=12, pady=8)
-
-    # --- Body ---
-    body = CTkFrame(main_frame, fg_color=WHITE, corner_radius=10)
-    body.pack(fill="both", expand=True, padx=8, pady=(4, 8))
-
-    CTkLabel(
-        body,
-        text=(
-            "The following documents have missing keys and were discarded.\n"
-            "Please rescan these page(s):"
-        ),
-        font=("Poppins", 12),
-        text_color="#333333",
-        justify="left",
-    ).pack(anchor="w", padx=12, pady=(10, 6))
-
-    # --- Scrollable list of errors ---
-    list_frame = CTkScrollableFrame(
-        body,
-        fg_color=PANEL_BG,
-        corner_radius=8,
-        height=160,
+    valid_exts = (".bmp", ".png", ".jpg", ".jpeg", ".tif", ".tiff")
+    entries = sorted(
+        [f for f in os.listdir(batch_dir) if f.lower().endswith(valid_exts)]
     )
-    list_frame.pack(fill="both", expand=True, padx=12, pady=(0, 10))
 
-    if qc_errors:
-        for fname, reason in qc_errors:
-            CTkLabel(
-                list_frame,
-                text=f"• {fname} → {reason}",
-                font=("Poppins", 11),
-                text_color="#333333",
-                anchor="w",
-                justify="left",
-            ).pack(fill="x", pady=2)
-    else:
-        CTkLabel(
-            list_frame,
-            text="No details available.",
-            font=("Poppins", 11, "italic"),
-            text_color="#555555",
-        ).pack(pady=10)
+    if not entries:
+        print(f"[INFO] No image files found in batch folder: {batch_dir}")
+        return
 
-    # --- Footer buttons ---
-    footer = CTkFrame(main_frame, fg_color=PANEL_BG)
-    footer.pack(fill="x", padx=8, pady=(0, 8))
+    for idx, fname in enumerate(entries, start=1):
+        img_path = os.path.join(batch_dir, fname)
+        print(f"\n[INFO] Processing: {img_path}")
 
-    def close_dialog():
-        dialog.destroy()
+        # Load via PIL so EXIF orientation can be handled
+        try:
+            pil_img = Image.open(img_path)
+        except Exception as e:
+            print(f"[ERROR] Failed to open image {fname}: {e}")
+            continue
 
-    CTkButton(
-        footer,
-        text="OK, I will rescan",
-        font=("Poppins", 12, "bold"),
-        fg_color=SIDEBAR_BTN,
-        hover_color=HOVER,
-        text_color=WHITE,
-        corner_radius=8,
-        width=150,
-        command=close_dialog,
-    ).pack(side="right", padx=12, pady=4)
+        pil_img = fix_orientation(pil_img)
 
-    # Center relative to parent
-    dialog.update_idletasks()
-    x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (dialog.winfo_width() // 2)
-    y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (dialog.winfo_height() // 2)
-    dialog.geometry(f"+{x}+{y}")
+        # PIL (RGB/grayscale) -> OpenCV BGR
+        np_img = np.array(pil_img)
+        if np_img.ndim == 2:
+            np_img = cv2.cvtColor(np_img, cv2.COLOR_GRAY2BGR)
+        else:
+            np_img = cv2.cvtColor(np_img, cv2.COLOR_RGB2BGR)
 
-    dialog.wait_window(dialog)
+        # Run your main OMR logic
+        try:
+            all_section_scores, annotated = process_sections(np_img)
+        except Exception as e:
+            print(f"[ERROR] OMR processing failed for {fname}: {e}")
+            continue
+
+        # Save annotated image next to originals
+        annotated_name = f"annotated_{idx:03d}.png"
+        annotated_path = os.path.join(batch_dir, annotated_name)
+        try:
+            cv2.imwrite(annotated_path, annotated)
+            print(f"[INFO] Annotated image saved → {annotated_path}")
+        except Exception as e:
+            print(f"[ERROR] Failed to save annotated image: {e}")
+
+        # Print scores to terminal
+        print_scores(idx, fname, all_section_scores)
 
 
 def main():
-    app = CTk()
-    app.title("QC Error Dialog Preview")
-    app.geometry("900x600")
+    """
+    CLI test runner:
+    - connects to the WIA scanner
+    - scans a batch
+    - processes each scanned page
+    - saves annotated images
+    - prints results to the terminal
+    """
 
-    container = CTkFrame(app)
-    container.pack(fill="both", expand=True, padx=20, pady=20)
+    # Optional: teacher name as argument, just to reuse your folder structure
+    # Usage: python main_code_scan_test.py "Teacher Name"
+    if len(sys.argv) > 1:
+        teacher_name = sys.argv[1]
+    else:
+        teacher_name = "CLI_Test"
 
-    qc_errors = [
-        ("SCAN_001.png", "Missing faculty signature"),
-        ("SCAN_002.png", "Answer sheet too faint / not detected"),
-        ("SCAN_003.png", "Blank page detected"),
-    ]
+    print(f"[INFO] Using teacher_name = {teacher_name!r}")
 
-    # Show dialog on startup
-    app.after(100, lambda: show_qc_error_dialog(container, qc_errors))
+    # COM init for WIA
+    pythoncom.CoInitialize()
+    try:
+        # Scanner root: Documents\MyWork\Scan\<teacher_name>\_incoming\<batch>
+        scanner = WIAScanner(teacher_name=teacher_name)
+        info = scanner.initialize()
+        print(f"✅ Scanner detected:")
+        print(f"   Name       : {info['name']}")
+        print(f"   Description: {info['description']}")
 
-    app.mainloop()
+        # Create new batch folder and scan
+        scanner.create_batch_dir()
+        pages_scanned, batch_dir = scanner.scan_batch()
+
+        if pages_scanned <= 0:
+            print("\n❌ No documents found in ADF or scanning aborted.")
+            return
+
+        print(f"\n✅ Scan completed: {pages_scanned} page(s) in {batch_dir}")
+
+        # Now run your main_code processing on that batch folder
+        process_batch_folder(batch_dir)
+
+    except Exception as e:
+        print(f"\n❌ Fatal error during scanning or processing: {e}")
+
+    finally:
+        pythoncom.CoUninitialize()
 
 
 if __name__ == "__main__":
     main()
-
-

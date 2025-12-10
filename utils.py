@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import os, re
 import db
+import math
 
 
 # --- Current user context for logging ----------------------------------------
@@ -136,43 +137,134 @@ def detect_horizontal_lines(section_img, section_name="Section"):
     return output, y_coords_filtered
 
 def detect_shaded_areas_connected(section_img, section_name="Section", fill_thresh=0.45):
+    """
+    Detect filled bubbles in a section image using connected components.
+
+    Returns:
+        annotated_section_img, detected_areas
+
+        detected_areas: list of (x, y, area) for each NON-CROSSED bubble.
+    """
+    # Work on a copy so we can draw circles
+    out_img = section_img.copy()
+
     gray = cv2.cvtColor(section_img, cv2.COLOR_BGR2GRAY)
-    
-    # Apply threshold to get binary image
-    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    
-    # Remove noise with morphological operations
+
+    # Binary: ink / marks are white (255), background black (0)
+    _, binary = cv2.threshold(
+        gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+    )
+
+    # Clean up noise and fill gaps
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)  # Remove small noise
-    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)  # Fill small gaps
-    
-    
-    
-    # Find connected components
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary, connectivity=8)
-    
+    binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+        binary, connectivity=8
+    )
+
+    h, w = binary.shape[:2]
     detected_areas = []
-    for i in range(1, num_labels):  # Skip background (label 0)
-        area = stats[i, cv2.CC_STAT_AREA]
-        x = int(centroids[i][0])
-        y = int(centroids[i][1])
 
-        # Stricter size filtering
-        if 80 < area < 400:  # Narrowed range to reduce false positives
-            # Build a mask for the current component to obtain the correct contour.
-            component_mask = (labels == i).astype("uint8")
-            contours, _ = cv2.findContours(component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if not contours:
-                continue
+    # Loop over components (skip label 0 = background)
+    for label in range(1, num_labels):
+        area = stats[label, cv2.CC_STAT_AREA]
 
-            perimeter = cv2.arcLength(contours[0], True)
-            if perimeter > 0:
-                circularity = 4 * np.pi * area / (perimeter * perimeter)
-                if circularity > 0.6:  # Only keep roughly circular shapes
-                    detected_areas.append((x, y, area))
-                    cv2.circle(section_img, (x, y), 10, (0, 255, 0), 2)
-    
-    return section_img, detected_areas
+        # Size filter: tuned for your bubbles
+        if not (80 < area < 400):
+            continue
+
+        x0 = stats[label, cv2.CC_STAT_LEFT]
+        y0 = stats[label, cv2.CC_STAT_TOP]
+        bw = stats[label, cv2.CC_STAT_WIDTH]
+        bh = stats[label, cv2.CC_STAT_HEIGHT]
+
+        cx = int(centroids[label][0])
+        cy = int(centroids[label][1])
+
+        # Crop a small ROI around this component (with a tiny padding)
+        pad = 2
+        x1 = max(x0 - pad, 0)
+        y1 = max(y0 - pad, 0)
+        x2 = min(x0 + bw + pad, w)
+        y2 = min(y0 + bh + pad, h)
+        roi = binary[y1:y2, x1:x2]
+
+        # --- 1) Check if this bubble is crossed out ---
+        if _has_cross_x(roi):
+            # Optional: draw red circle to debug
+            cv2.circle(out_img, (cx, cy), 10, (0, 0, 255), 2)
+            # Skip this bubble entirely (treated as NOT answered)
+            continue
+
+        # --- 2) (Optional) shape check: roughly circular ---
+        contours, _ = cv2.findContours(
+            roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+        if not contours:
+            continue
+
+        cnt = max(contours, key=cv2.contourArea)
+        perimeter = cv2.arcLength(cnt, True)
+        if perimeter <= 0:
+            continue
+
+        circ_area = cv2.contourArea(cnt)
+        circularity = 4 * np.pi * circ_area / (perimeter * perimeter)
+
+        # Keep only roughly circular shapes
+        if circularity < 0.6:
+            continue
+
+        # This is a valid, non-crossed bubble
+        detected_areas.append((cx, cy, area))
+        cv2.circle(out_img, (cx, cy), 10, (0, 255, 0), 2)  # green = taken answer
+
+    return out_img, detected_areas
+
+def _has_cross_x(roi_binary: np.ndarray) -> bool:
+    """
+    Detect whether there is an 'X' (two long diagonals) inside the ROI.
+
+    roi_binary: small binary image (255 = ink/mark, 0 = background) around the bubble.
+    """
+    # Canny edge detection
+    edges = cv2.Canny(roi_binary, 50, 150)
+
+    # Hough line detection
+    lines = cv2.HoughLinesP(
+        edges,
+        rho=1,
+        theta=np.pi / 180,
+        threshold=18,  # how many edge points needed
+        minLineLength=int(0.6 * max(roi_binary.shape)),  # long lines only
+        maxLineGap=3,
+    )
+
+    if lines is None:
+        return False
+
+    pos_diag = 0  # / slope
+    neg_diag = 0  # \ slope
+
+    for line in lines:
+        x1, y1, x2, y2 = line[0]
+        dx = x2 - x1
+        dy = y2 - y1
+        if dx == 0 and dy == 0:
+            continue
+
+        angle = abs(math.degrees(math.atan2(dy, dx)))  # 0–180
+
+        # Roughly 45° or 135° = diagonals
+        if 25 < angle < 65:
+            pos_diag += 1
+        elif 115 < angle < 155:
+            neg_diag += 1
+
+    # We consider it an X if we have at least one of each diagonal
+    return pos_diag >= 1 and neg_diag >= 1
 
 
 # ui_utils.py
