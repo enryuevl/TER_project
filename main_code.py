@@ -71,8 +71,10 @@ def process_sections(img):
             if col_assigned and row_assigned:
                 circle_assignments.append((row_assigned, col_assigned, x, y, area))
 
+        # circle_assignments: list of (row, col, x, y, area)
         circle_assignments.sort(key=lambda item: (item[0], item[1]))
 
+        unique_cells = {}
         for (row, col, x, y, area) in circle_assignments:
             if (row, col) not in unique_cells:
                 unique_cells[(row, col)] = (x, y, area)

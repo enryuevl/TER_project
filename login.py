@@ -148,6 +148,11 @@ class LoginApp(ctk.CTk):
         # Responsive (debounced)
         self.bind("<Configure>", self._on_resize)
         self._apply_responsive()
+        # Center the window on screen
+        # Center window after full render
+        self.after(10, lambda: self.after(10, self._center_on_screen))
+
+
 
     # ---------- DB utils ----------
     def _load_departments(self):
@@ -515,7 +520,22 @@ class LoginApp(ctk.CTk):
         if self.logo_image:
             self.logo_image.configure(size=(logo, logo))
 
+    def _center_on_screen(self):
+        self.update_idletasks()  # force geometry calculation
 
+        w = self.winfo_width()
+        h = self.winfo_height()
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+
+        # Compute perfect center
+        x = (sw // 2) - (w // 2)
+        y = (sh // 2) - (h // 2)
+
+        # Apply new geometry without resizing
+        self.geometry(f"{w}x{h}+{x}+{y}")
+
+    
 if __name__ == "__main__":
     app = LoginApp(logo_path="logo.png")
     app.mainloop()
