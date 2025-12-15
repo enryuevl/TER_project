@@ -25,6 +25,17 @@ from home_page import HomePage
 from dataclasses import dataclass
 
 
+#This is to whoever is using the code
+##Please make sure to have the required images in the same directory as this script:
+#also about 40% of this is vibe coded so have fun reading through it :)
+#but most of them are UI components so it should be fine
+#the most important part is the utils, db, and scanner modules
+#all of those are custom made for the current (2024) TER form
+#so if you have a new form please adjust those modules accordingly
+#everything else follows through from there
+#if you have any questions feel free to contact me at paulandreidasco@gmail.com or on facebook Paul Andrei
+
+
 @dataclass
 class AppContext:
     role: str
